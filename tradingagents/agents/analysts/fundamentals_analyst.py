@@ -10,19 +10,40 @@ def create_fundamentals_analyst(llm):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
+        portfolio_context = state.get("portfolio_context", "")
 
         tools = [
             get_fundamentals,
             get_balance_sheet,
             get_cashflow,
             get_income_statement,
+            get_insider_sentiment,
+            get_insider_transactions,
         ]
 
         system_message = (
-            "You are a researcher tasked with analyzing fundamental information over the past week about a company. Please write a comprehensive report of the company's fundamental information such as financial documents, company profile, basic company financials, and company financial history to gain a full view of the company's fundamental information to inform traders. Make sure to include as much detail as possible. Do not simply state the trends are mixed, provide detailed and finegrained analysis and insights that may help traders make decisions."
-            + " Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."
-            + " Use the available tools: `get_fundamentals` for comprehensive company analysis, `get_balance_sheet`, `get_cashflow`, and `get_income_statement` for specific financial statements.",
+            "You are a fundamentals analyst supporting a short-term (1–2 month) swing trade decision. Focus on what can plausibly matter over the next 4–8 weeks (quality, liquidity/financing risk, earnings sensitivity, and any near-term fundamental catalysts)."
+            "\n\nWorkflow (tool-first, then write):"
+            "\n1) Call `get_fundamentals(ticker=<ticker>, curr_date=<current_date>)` to pull the company overview/ratios."
+            "\n2) Call `get_income_statement`, `get_balance_sheet`, and `get_cashflow` (quarterly) to identify recent acceleration/deceleration and balance-sheet constraints."
+            "\n3) Call `get_insider_transactions` and `get_insider_sentiment` if available; if a vendor/tool returns missing data, note it and proceed."
+            "\n4) Write the final report **without** further tool calls."
+            "\n\nReport requirements (keep it to-the-point and trade-relevant):"
+            "\n- Near-term fundamental narrative: what changed recently and what could change next (don’t invent dates)."
+            "\n- Earnings sensitivity: which line items/segments/margins matter most; what the market is likely keying on."
+            "\n- Balance-sheet/liquidity: cash, debt, liquidity runway, refinancing risk (if discernible)."
+            "\n- Valuation/expectations: whether expectations look stretched vs recent fundamentals (use available ratios; avoid long debates)."
+            "\n- Insider activity: summarize net buying/selling and any notable patterns."
+            "\n- Bottom line: bullish/bearish fundamental bias for a 1–2 month horizon + 2–3 concrete risks that would invalidate it."
+            "\n\nEnd with a compact Markdown table summarizing: key metric(s), directionality, why it matters in 4–8 weeks, and the risk if wrong."
         )
+
+        if portfolio_context:
+            system_message += (
+                "\n\n---\nCURRENT PORTFOLIO CONTEXT (live brokerage snapshot):\n"
+                + str(portfolio_context)
+                + "\n\nExecution note: The system can place MARKET (execute now) or conditional orders (LIMIT/STOP/STOP_LIMIT/TRAILING_STOP) that may execute later. Highlight any near-term catalysts/risks that would affect whether to execute now vs stage entries/exits.\n---"
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [

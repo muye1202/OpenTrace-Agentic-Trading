@@ -1,7 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
-from tradingagents.agents.utils.agent_utils import get_news, get_global_news
+from tradingagents.agents.utils.agent_utils import get_news, get_company_news_window, get_global_news
 from tradingagents.dataflows.config import get_config
 
 
@@ -9,16 +9,35 @@ def create_news_analyst(llm):
     def news_analyst_node(state):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
+        portfolio_context = state.get("portfolio_context", "")
 
         tools = [
             get_news,
+            get_company_news_window,
             get_global_news,
         ]
 
         system_message = (
-            "You are a news researcher tasked with analyzing recent news and trends over the past week. Please write a comprehensive report of the current state of the world that is relevant for trading and macroeconomics. Use the available tools: get_news(query, start_date, end_date) for company-specific or targeted news searches, and get_global_news(curr_date, look_back_days, limit) for broader macroeconomic news. Do not simply state the trends are mixed, provide detailed and finegrained analysis and insights that may help traders make decisions."
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+            "You are a news + macro analyst supporting a short-term (1–2 month) swing trade decision. Your job is to identify *trade-relevant* catalysts and risks for the next 4–8 weeks, not to produce a long general news recap."
+            "\n\nWorkflow (tool-first, then write):"
+            "\n1) Pull company-specific news/sentiment for the last ~21 days using `get_company_news_window(ticker=<ticker>, curr_date=<current_date>, look_back_days=21)` (fallback: `get_news`)."
+            "\n2) Pull macro/regime headlines using `get_global_news(curr_date=<current_date>, look_back_days=7, limit=10)`."
+            "\n3) After you have data, write the final report **without** further tool calls."
+            "\n\nReport requirements (to-the-point, trading oriented):"
+            "\n- Company catalysts: summarize key storylines; map each to likely price impact direction and time window."
+            "\n- Macro/regime: risk-on/off tone, rates/inflation themes, and how they could affect the ticker/sector."
+            "\n- Sentiment/positioning signals from the vendor output (e.g., Alpha Vantage news sentiment scores) if present."
+            "\n- Event-driven risk: list 3–5 plausible upcoming catalysts/risks over the next 4–8 weeks (don’t invent dates; describe them generically if unknown)."
+            "\n- Bottom line: short-term news-driven bias (bullish/bearish/neutral) + what headline would invalidate it."
+            "\n\nEnd with a compact Markdown table: theme, bullish/bearish impulse, confidence, time horizon, and key watch item."
         )
+
+        if portfolio_context:
+            system_message += (
+                "\n\n---\nCURRENT PORTFOLIO CONTEXT (live brokerage snapshot):\n"
+                + str(portfolio_context)
+                + "\n\nExecution note: The system can place MARKET (execute now) or conditional orders (LIMIT/STOP/STOP_LIMIT/TRAILING_STOP) that may execute later. Call out catalyst timing that favors immediate execution vs staged/conditional orders.\n---"
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [

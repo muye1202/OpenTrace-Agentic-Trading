@@ -60,8 +60,12 @@ Leverage these insights to make an informed and strategic decision.""",
   - ACTION: BUY / SELL / HOLD
   - TICKER: {company_name}
   - QUANTITY: [INTEGER number of shares, or "N/A" for HOLD]
-  - ORDER_TYPE: MARKET / LIMIT
-  - LIMIT_PRICE: [price if LIMIT, or "N/A"]
+  - ORDER_TYPE: MARKET / LIMIT / STOP / STOP_LIMIT / TRAILING_STOP
+  - TIME_IN_FORCE: DAY / GTC
+  - LIMIT_PRICE: [required for LIMIT and STOP_LIMIT; otherwise "N/A"]
+  - STOP_PRICE: [required for STOP and STOP_LIMIT; otherwise "N/A"]
+  - TRAIL_PERCENT: [for TRAILING_STOP, percent like 3 for 3%; otherwise "N/A"]
+  - TRAIL_PRICE: [for TRAILING_STOP, dollars like 1.25; otherwise "N/A"]
   - STOP_LOSS: [price, or "N/A"]
   - TAKE_PROFIT: [price target, or "N/A"]
   - TIME_HORIZON: [e.g., "1-3 days", "1-2 weeks", "swing trade"]
@@ -70,6 +74,10 @@ Leverage these insights to make an informed and strategic decision.""",
   ---
 
   IMPORTANT RULES:
+  - MARKET means execute now (immediate attempt). LIMIT/STOP/STOP_LIMIT/TRAILING_STOP may execute later if triggered/filled.
+  - For TRAILING_STOP you MUST set exactly ONE of TRAIL_PERCENT or TRAIL_PRICE (the other must be N/A).
+  - For STOP you MUST set STOP_PRICE. For STOP_LIMIT you MUST set both STOP_PRICE and LIMIT_PRICE. For LIMIT you MUST set LIMIT_PRICE.
+  - If you are unsure about conditional order parameters, use MARKET or LIMIT with a clear LIMIT_PRICE.
   - If you have ZERO position and the analysis is bearish, recommend HOLD (pass), NOT SELL.
   - SELL is only valid if you currently hold shares.
   - Size your QUANTITY based on available cash/buying power (suggest 5-15% of portfolio for medium confidence, up to 20% for high confidence).

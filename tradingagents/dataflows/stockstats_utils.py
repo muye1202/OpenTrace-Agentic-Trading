@@ -65,7 +65,10 @@ class StockstatsUtils:
                     try:
                         bars_df = fetch_stock_bars_df_alpaca(symbol, start_date, end_date)
                     except AlpacaConnectionError as e:
-                        print(f"WARNING: Alpaca indicator data unavailable ({e}); falling back to yfinance")
+                        print(
+                            f"WARNING: Alpaca indicator data unavailable ({e}); falling back to yfinance. "
+                            "If you set APCA_API_BASE_URL for trading, also set APCA_API_DATA_URL=https://data.alpaca.markets for market data."
+                        )
                         bars_df = None
 
                     if bars_df is None or getattr(bars_df, "empty", False):

@@ -75,8 +75,12 @@ YOUR OUTPUT MUST END WITH a structured decision:
   - ACTION: BUY / SELL / HOLD
   - TICKER: [symbol]
   - QUANTITY: [INTEGER number of shares, or "N/A" for HOLD]
-  - ORDER_TYPE: MARKET / LIMIT
-  - LIMIT_PRICE: [target price if LIMIT, otherwise "N/A"]
+  - ORDER_TYPE: MARKET / LIMIT / STOP / STOP_LIMIT / TRAILING_STOP
+  - TIME_IN_FORCE: DAY / GTC
+  - LIMIT_PRICE: [required for LIMIT and STOP_LIMIT; otherwise "N/A"]
+  - STOP_PRICE: [required for STOP and STOP_LIMIT; otherwise "N/A"]
+  - TRAIL_PERCENT: [for TRAILING_STOP, percent like 3 for 3%; otherwise "N/A"]
+  - TRAIL_PRICE: [for TRAILING_STOP, dollars like 1.25; otherwise "N/A"]
   - STOP_LOSS: [stop-loss price or "N/A"]
   - TAKE_PROFIT: [profit target or "N/A"]
   - POSITION_SIZE_PCT: [% of portfolio]
@@ -86,6 +90,9 @@ YOUR OUTPUT MUST END WITH a structured decision:
   ---
 
   QUANTITY RULES:
+  - MARKET means execute now (immediate attempt). LIMIT/STOP/STOP_LIMIT/TRAILING_STOP may execute later if triggered/filled.
+  - For TRAILING_STOP you MUST set exactly ONE of TRAIL_PERCENT or TRAIL_PRICE (the other must be N/A).
+  - For STOP you MUST set STOP_PRICE. For STOP_LIMIT you MUST set both STOP_PRICE and LIMIT_PRICE. For LIMIT you MUST set LIMIT_PRICE.
   - QUANTITY must be a single integer on that line (e.g., "37"). Do NOT include any other numbers (no %s, no ranges, no "10% (~37 shares)").
   - SELL must not default to liquidating the whole position unless explicitly intended; if fully exiting, set QUANTITY equal to the exact number of shares currently held.
   """

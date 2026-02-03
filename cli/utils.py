@@ -131,6 +131,9 @@ def select_shallow_thinking_agent(provider) -> str:
 
     # Define shallow thinking llm engine options with their corresponding model names
     SHALLOW_AGENT_OPTIONS = {
+        "glm": [
+            ("GLM-4.7-Flash - Fast, cost-effective", "glm-4.7-flash"),
+        ],
         "qwen3-cn": [
             ("Qwen-Plus (Latest)", "qwen-plus-latest"),
             ("Qwen-Plus (2025-07-28)", "qwen-plus-2025-07-28"),
@@ -183,6 +186,9 @@ def select_deep_thinking_agent(provider) -> str:
 
     # Define deep thinking llm engine options with their corresponding model names
     DEEP_AGENT_OPTIONS = {
+        "glm": [
+            ("GLM-4.7-Flash - Fast, cost-effective", "glm-4.7-flash"),
+        ],
         "qwen3-cn": [
             ("Qwen3-Max - Flagship large model", "qwen3-max"),
             ("Qwen3-Max (2026-01-23) - Versioned flagship model", "qwen3-max-2026-01-23"),
@@ -234,6 +240,7 @@ def select_llm_provider() -> tuple[str, str]:
         ("Google", "openai", "http://192.168.123.81:8045/v1"),   # NOTE: Hankun's Antigravity Tool
         ("Qwen3-CN (DashScope)", "qwen3-cn", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
         ("DeepSeek", "deepseek", "https://api.deepseek.com/v1"),
+        ("GLM (ZhipuAI)", "glm", "https://open.bigmodel.cn/api/paas/v4"),
     ]
 
     choice = questionary.select(

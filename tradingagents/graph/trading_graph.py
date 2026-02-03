@@ -30,11 +30,13 @@ from tradingagents.dataflows.config import set_config
 from tradingagents.agents.utils.agent_utils import (
     get_stock_data,
     get_indicators,
+    get_price_action_summary,
     get_fundamentals,
     get_balance_sheet,
     get_cashflow,
     get_income_statement,
     get_news,
+    get_company_news_window,
     get_insider_sentiment,
     get_insider_transactions,
     get_global_news
@@ -46,6 +48,8 @@ from .propagation import Propagator
 from .reflection import Reflector
 from .signal_processing import SignalProcessor
 from .openai_compat import sanitize_openai_compatible_response_dict
+from .glm_compat import sanitize_glm_chat_completion_response_dict
+from tradingagents.agents.utils.llm_concurrency import llm_inflight_slot
 
 class StreamCompatibleChatOpenAI(ChatOpenAI):
     """Handle OpenAI SDK Stream responses by aggregating them into a single ChatCompletion-like dict."""
@@ -135,6 +139,37 @@ class DeepSeekCompatibleChatOpenAI(ChatOpenAI):
 
         return super()._create_chat_result(response, generation_info=generation_info)
 
+class GLMCompatibleChatOpenAI(ChatOpenAI):
+    """Sanitize GLM (ZhipuAI) OpenAI-compatible responses for LangChain parsing."""
+
+    def _create_chat_result(self, response, generation_info=None):
+        response_dict = None
+        if isinstance(response, dict):
+            response_dict = response
+        else:
+            try:
+                response_dict = response.model_dump()
+            except Exception:
+                response_dict = None
+
+        if response_dict and isinstance(response_dict, dict):
+            sanitize_glm_chat_completion_response_dict(response_dict)
+            # Apply general OpenAI-compatible sanitizers too (e.g., double-encoded tool args).
+            sanitize_openai_compatible_response_dict(response_dict)
+            return super()._create_chat_result(response_dict, generation_info=generation_info)
+
+        return super()._create_chat_result(response, generation_info=generation_info)
+
+class GLMFlashSerialChatOpenAI(GLMCompatibleChatOpenAI):
+    """Serialize in-flight requests for GLM-4.7-Flash (no parallelism)."""
+
+    def invoke(self, input, config=None, **kwargs):
+        key = getattr(self, "_ta_llm_concurrency_key", None)
+        if not key:
+            return super().invoke(input, config=config, **kwargs)
+        with llm_inflight_slot(key, 1):
+            return super().invoke(input, config=config, **kwargs)
+
 
 class TradingAgentsGraph:
     """Main class that orchestrates the trading agents framework."""
@@ -165,12 +200,18 @@ class TradingAgentsGraph:
         )
 
         # Initialize LLMs
-        if self.config["llm_provider"].lower() in {"openai", "ollama", "openrouter", "qwen3-cn", "deepseek"}:
+        if self.config["llm_provider"].lower() in {"openai", "ollama", "openrouter", "qwen3-cn", "deepseek", "glm"}:
             openai_kwargs = {"base_url": self.config["backend_url"]}
             if self.config["llm_provider"].lower() == "qwen3-cn":
                 openai_kwargs["api_key"] = os.getenv("DASHSCOPE_API_KEY")
             if self.config["llm_provider"].lower() == "deepseek":
                 openai_kwargs["api_key"] = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+            if self.config["llm_provider"].lower() == "glm":
+                openai_kwargs["api_key"] = (
+                    os.getenv("ZHIPUAI_API_KEY")
+                    or os.getenv("GLM_API_KEY")
+                    or os.getenv("OPENAI_API_KEY")
+                )
 
             # Provider-specific parameters for OpenAI-compatible backends.
             # DashScope supports "enable_thinking" (reasoning mode) for select Qwen models.
@@ -261,16 +302,35 @@ class TradingAgentsGraph:
                 )
             )
 
-            if self.config["llm_provider"].lower() == "qwen3-cn":
-                ChatLLM = StreamCompatibleChatOpenAI
-            elif self.config["llm_provider"].lower() == "deepseek":
-                ChatLLM = DeepSeekCompatibleChatOpenAI
+            provider = self.config["llm_provider"].lower()
+
+            if provider == "qwen3-cn":
+                base_llm_cls = StreamCompatibleChatOpenAI
+            elif provider == "deepseek":
+                base_llm_cls = DeepSeekCompatibleChatOpenAI
+            elif provider == "glm":
+                base_llm_cls = GLMCompatibleChatOpenAI
             else:
-                ChatLLM = ChatOpenAI
-            self.deep_thinking_llm = ChatLLM(
+                base_llm_cls = ChatOpenAI
+
+            deep_llm_cls = base_llm_cls
+            quick_llm_cls = base_llm_cls
+
+            # GLM-4.7-Flash: enforce no parallelism by serializing in-flight requests.
+            if provider == "glm":
+                if (self.config.get("deep_think_llm") or "") == "glm-4.7-flash":
+                    deep_llm_cls = GLMFlashSerialChatOpenAI
+                if (self.config.get("quick_think_llm") or "") == "glm-4.7-flash":
+                    quick_llm_cls = GLMFlashSerialChatOpenAI
+
+            self.deep_thinking_llm = deep_llm_cls(
                 model=self.config["deep_think_llm"],
                 **_with_streaming(_with_extra_params(openai_kwargs.copy(), qwen_extra), deep_streaming),
             )
+            if provider == "glm" and deep_llm_cls is GLMFlashSerialChatOpenAI:
+                self.deep_thinking_llm._ta_llm_concurrency_key = (
+                    f"llm:{provider}:{self.config['backend_url']}:{self.config.get('deep_think_llm')}".lower()
+                )
 
             quick_streaming = bool(
                 self.config.get("llm_provider", "").lower() == "qwen3-cn"
@@ -282,7 +342,7 @@ class TradingAgentsGraph:
                     or _qwen_requires_stream(self.config.get("quick_think_llm", ""))
                 )
             )
-            self.quick_thinking_llm = ChatLLM(
+            self.quick_thinking_llm = quick_llm_cls(
                 model=self.config["quick_think_llm"],
                 **_with_extra_params(
                     _with_streaming(openai_kwargs.copy(), quick_streaming),
@@ -306,6 +366,10 @@ class TradingAgentsGraph:
                     ),
                 ),
             )
+            if provider == "glm" and quick_llm_cls is GLMFlashSerialChatOpenAI:
+                self.quick_thinking_llm._ta_llm_concurrency_key = (
+                    f"llm:{provider}:{self.config['backend_url']}:{self.config.get('quick_think_llm')}".lower()
+                )
         elif self.config["llm_provider"].lower() == "anthropic":
             self.deep_thinking_llm = ChatAnthropic(model=self.config["deep_think_llm"], base_url=self.config["backend_url"])
             self.quick_thinking_llm = ChatAnthropic(model=self.config["quick_think_llm"], base_url=self.config["backend_url"])
@@ -367,18 +431,22 @@ class TradingAgentsGraph:
                     get_stock_data,
                     # Technical indicators
                     get_indicators,
+                    # Short-term price action/risk metrics
+                    get_price_action_summary,
                 ]
             ),
             "social": ToolNode(
                 [
                     # News tools for social media analysis
                     get_news,
+                    get_company_news_window,
                 ]
             ),
             "news": ToolNode(
                 [
                     # News and insider information
                     get_news,
+                    get_company_news_window,
                     get_global_news,
                     get_insider_sentiment,
                     get_insider_transactions,
@@ -430,6 +498,11 @@ class TradingAgentsGraph:
                 trade_date=trade_date,
                 agent_quantity=structured.get("quantity"),
                 agent_limit_price=structured.get("limit_price"),
+                agent_order_type=structured.get("order_type"),
+                agent_time_in_force=structured.get("time_in_force"),
+                agent_stop_price=structured.get("stop_price"),
+                agent_trail_percent=structured.get("trail_percent"),
+                agent_trail_price=structured.get("trail_price"),
             )
 
         return final_state, decision, execution_result

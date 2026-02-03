@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
+from urllib.parse import urlparse
 
 
 class AlpacaConnectionError(RuntimeError):
@@ -17,6 +18,51 @@ class AlpacaCredentials:
     data_url: Optional[str] = None
 
 
+def _clean_url(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    # Defensive: allow .env-style inline comments (e.g. "https://...  # note").
+    if "#" in v:
+        v = v.split("#", 1)[0].strip()
+        if not v:
+            return None
+    # Normalize common "endpoint" vars that include the /v2 suffix.
+    if v.endswith("/v2"):
+        v = v[: -len("/v2")]
+    return v
+
+
+def _infer_data_url_from_base(base_url: Optional[str]) -> Optional[str]:
+    """Best-effort mapping from trading base URLs to Alpaca market data base URL.
+
+    Users often set APCA_API_BASE_URL to a trading endpoint (paper-api/api). Historical
+    bars/quotes are served from the data host.
+    """
+    base = _clean_url(base_url)
+    if not base:
+        return None
+
+    # urlparse requires a scheme; assume https when omitted.
+    to_parse = base if "://" in base else f"https://{base}"
+    parsed = urlparse(to_parse)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return None
+
+    # Already a data host; keep it.
+    if host.startswith("data."):
+        return "https://data.alpaca.markets"
+
+    # Common Alpaca trading hosts -> data host.
+    if host in {"paper-api.alpaca.markets", "api.alpaca.markets"}:
+        return "https://data.alpaca.markets"
+
+    return None
+
+
 def _get_alpaca_credentials() -> AlpacaCredentials:
     """
     Resolve Alpaca credentials from environment variables.
@@ -24,18 +70,34 @@ def _get_alpaca_credentials() -> AlpacaCredentials:
     Supports common Alpaca env var names:
     - APCA_API_KEY_ID / APCA_API_SECRET_KEY (official)
     - ALPACA_API_KEY / ALPACA_API_SECRET (fallback)
+    - ALPACA_SECRET_KEY (common alternative secret var)
     - APCA_API_DATA_URL / ALPACA_DATA_URL (optional override)
+    - APCA_API_BASE_URL / ALPACA_API_BASE_URL (common alternative data/base URL override)
     """
     api_key = os.getenv("APCA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
-    secret_key = os.getenv("APCA_API_SECRET_KEY") or os.getenv("ALPACA_API_SECRET")
+    secret_key = (
+        os.getenv("APCA_API_SECRET_KEY")
+        or os.getenv("ALPACA_API_SECRET")
+        or os.getenv("ALPACA_SECRET_KEY")
+    )
 
     if not api_key or not secret_key:
         raise AlpacaConnectionError(
             "Missing Alpaca credentials. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY "
-            "(or ALPACA_API_KEY and ALPACA_API_SECRET)."
+            "(or ALPACA_API_KEY and ALPACA_API_SECRET / ALPACA_SECRET_KEY)."
         )
 
-    data_url = os.getenv("APCA_API_DATA_URL") or os.getenv("ALPACA_DATA_URL")
+    # Prefer explicit data URL overrides; do not treat trading base URLs as data URLs.
+    data_url = _clean_url(os.getenv("APCA_API_DATA_URL") or os.getenv("ALPACA_DATA_URL"))
+    if not data_url:
+        # If only a trading base URL is set, infer the correct data endpoint.
+        base_url = (
+            os.getenv("APCA_API_BASE_URL")
+            or os.getenv("ALPACA_API_BASE_URL")
+            or os.getenv("APCA_ENDPOINT")
+            or os.getenv("ALPACA_ENDPOINT")
+        )
+        data_url = _infer_data_url_from_base(base_url)
     return AlpacaCredentials(api_key=api_key, secret_key=secret_key, data_url=data_url)
 
 

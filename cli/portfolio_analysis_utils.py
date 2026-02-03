@@ -58,7 +58,6 @@ def analyze_portfolio(execute_trades: bool, min_conviction: float, analysis_date
         "provider": "alpaca",
         "paper": True,
         "position_size_pct": 0.10,
-        "order_type": "market",
     }
     selections["min_conviction"] = float(min_conviction)
 
@@ -96,7 +95,6 @@ def run_portfolio_analysis_from_selections(selections: dict) -> None:
         "provider": "alpaca",
         "paper": bool(exec_sel.get("paper", True)),
         "position_size_pct": float(exec_sel.get("position_size_pct", 0.10)),
-        "order_type": str(exec_sel.get("order_type", "market")),
     }
     executor = setup_executor(executor_settings, log_dir=results_dir / "execution_logs")
     if not executor:

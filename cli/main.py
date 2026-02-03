@@ -1,6 +1,7 @@
 import os
 from typing import Optional
 import datetime
+import json
 import typer
 import questionary
 from pathlib import Path
@@ -223,29 +224,11 @@ def select_execution_settings() -> dict:
     ).ask()
     position_size_pct = float(position_pct) / 100.0
 
-    order_type = questionary.select(
-        "Order type:",
-        choices=[
-            questionary.Choice("Market", value="market"),
-            questionary.Choice("Limit (uses a small offset)", value="limit"),
-        ],
-        default="market",
-        instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
-        style=questionary.Style(
-            [
-                ("selected", "fg:yellow noinherit"),
-                ("highlighted", "fg:yellow noinherit"),
-                ("pointer", "fg:yellow noinherit"),
-            ]
-        ),
-    ).ask()
-
     return {
         "enabled": True,
         "provider": "alpaca",
         "paper": True,
         "position_size_pct": position_size_pct,
-        "order_type": order_type or "market",
     }
 
 
@@ -272,7 +255,6 @@ def setup_executor(execution_settings: dict, log_dir: Optional[Path] = None) -> 
         executor = AlpacaExecutor(
             paper=bool(execution_settings.get("paper", True)),
             position_size_pct=float(execution_settings.get("position_size_pct", 0.10)),
-            order_type=str(execution_settings.get("order_type", "market")),
             log_dir=str(log_dir) if log_dir else None,
         )
 
@@ -429,9 +411,23 @@ def update_display(layout, spinner_text=None):
                         text_parts.append(item.get('text', ''))
                     elif item.get('type') == 'tool_use':
                         text_parts.append(f"[Tool: {item.get('name', 'unknown')}]")
+                    elif isinstance(item.get("text"), str):
+                        text_parts.append(item.get("text", ""))
+                    elif isinstance(item.get("content"), str):
+                        text_parts.append(item.get("content", ""))
                 else:
                     text_parts.append(str(item))
             content_str = ' '.join(text_parts)
+        elif isinstance(content, dict):
+            if isinstance(content.get("text"), str):
+                content_str = content["text"]
+            elif isinstance(content.get("content"), str):
+                content_str = content["content"]
+            else:
+                try:
+                    content_str = json.dumps(content, ensure_ascii=False)
+                except Exception:
+                    content_str = str(content)
         elif not isinstance(content_str, str):
             content_str = str(content)
             

@@ -7,6 +7,9 @@ from tradingagents.agents.utils.core_stock_tools import (
 from tradingagents.agents.utils.technical_indicators_tools import (
     get_indicators
 )
+from tradingagents.agents.utils.price_action_tools import (
+    get_price_action_summary
+)
 from tradingagents.agents.utils.fundamental_data_tools import (
     get_fundamentals,
     get_balance_sheet,
@@ -17,7 +20,8 @@ from tradingagents.agents.utils.news_data_tools import (
     get_news,
     get_insider_sentiment,
     get_insider_transactions,
-    get_global_news
+    get_global_news,
+    get_company_news_window,
 )
 
 def create_msg_delete():

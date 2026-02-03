@@ -50,7 +50,11 @@ class SignalProcessor:
             "ticker": None,
             "quantity": None,
             "order_type": "MARKET",
+            "time_in_force": None,
             "limit_price": None,
+            "stop_price": None,
+            "trail_percent": None,
+            "trail_price": None,
             "stop_loss": None,
             "take_profit": None,
             "position_size_pct": None,
@@ -71,6 +75,52 @@ class SignalProcessor:
             result["action"] = self.process_signal(full_signal)
 
         return result
+
+    @staticmethod
+    def _normalize_order_type(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        v = str(value).strip().upper()
+        v = v.replace("-", "_").replace(" ", "_")
+        allowed = {"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"}
+        if v in allowed:
+            return v
+        # Common aliases
+        alias = {
+            "STOPLIMIT": "STOP_LIMIT",
+            "STOP_LIMIT_ORDER": "STOP_LIMIT",
+            "TRAILINGSTOP": "TRAILING_STOP",
+            "TRAIL_STOP": "TRAILING_STOP",
+            "TRAILING": "TRAILING_STOP",
+        }
+        return alias.get(v)
+
+    @staticmethod
+    def _normalize_time_in_force(value: Optional[str]) -> Optional[str]:
+        if not value:
+            return None
+        v = str(value).strip().upper()
+        v = v.replace("-", "_").replace(" ", "_")
+        if v in {"DAY", "GTC"}:
+            return v
+        return None
+
+    @staticmethod
+    def _parse_float(value: Optional[str]) -> Optional[float]:
+        if value is None:
+            return None
+        s = str(value).strip()
+        if not s:
+            return None
+        if s.upper() in ("N/A", "NA", "NONE", "-"):
+            return None
+        m = re.search(r"([-+]?\d[\d,]*\.?\d*)", s.replace("%", ""))
+        if not m:
+            return None
+        try:
+            return float(m.group(1).replace(",", ""))
+        except Exception:
+            return None
 
     def _parse_structured_block(self, text: str) -> Optional[Dict[str, Any]]:
         """Parse the FINAL TRADING DECISION / FINAL TRANSACTION PROPOSAL block."""
@@ -95,7 +145,11 @@ class SignalProcessor:
             "TICKER": "ticker",
             "QUANTITY": "quantity",
             "ORDER_TYPE": "order_type",
+            "TIME_IN_FORCE": "time_in_force",
             "LIMIT_PRICE": "limit_price",
+            "STOP_PRICE": "stop_price",
+            "TRAIL_PERCENT": "trail_percent",
+            "TRAIL_PRICE": "trail_price",
             "STOP_LOSS": "stop_loss",
             "TAKE_PROFIT": "take_profit",
             "POSITION_SIZE_PCT": "position_size_pct",
@@ -120,13 +174,18 @@ class SignalProcessor:
                     nums = re.findall(r"(\d+)", value)
                     value = int(nums[-1]) if nums else None
 
-                if result_key in ("limit_price", "stop_loss", "take_profit") and value:
-                    price_match = re.search(r"\$?([\d,.]+)", value)
-                    value = float(price_match.group(1).replace(",", "")) if price_match else None
+                if result_key in (
+                    "limit_price",
+                    "stop_price",
+                    "stop_loss",
+                    "take_profit",
+                    "trail_price",
+                    "trail_percent",
+                ):
+                    value = self._parse_float(value)
 
                 if result_key == "position_size_pct" and value:
-                    pct_match = re.search(r"([\d.]+)", value)
-                    value = float(pct_match.group(1)) if pct_match else None
+                    value = self._parse_float(value)
 
                 if result_key == "action" and value:
                     value = value.upper()
@@ -137,9 +196,36 @@ class SignalProcessor:
                     else:
                         value = "HOLD"
 
+                if result_key == "order_type":
+                    normalized = self._normalize_order_type(value)
+                    value = normalized if normalized is not None else str(value).strip().upper()
+
+                if result_key == "time_in_force":
+                    normalized = self._normalize_time_in_force(value)
+                    value = normalized if normalized is not None else str(value).strip().upper()
+
                 result[result_key] = value
 
         if "action" not in result or not result["action"]:
             return None
+
+        # Light validation: keep missing params as None so executor can error clearly.
+        order_type = result.get("order_type")
+        if order_type == "LIMIT" and not result.get("limit_price"):
+            result["limit_price"] = None
+        if order_type == "STOP" and not result.get("stop_price"):
+            result["stop_price"] = None
+        if order_type == "STOP_LIMIT":
+            if not result.get("stop_price"):
+                result["stop_price"] = None
+            if not result.get("limit_price"):
+                result["limit_price"] = None
+        if order_type == "TRAILING_STOP":
+            tp = result.get("trail_percent")
+            tr = result.get("trail_price")
+            # Require exactly one; ambiguous inputs become None so executor rejects.
+            if (tp is None and tr is None) or (tp is not None and tr is not None):
+                result["trail_percent"] = None
+                result["trail_price"] = None
 
         return result

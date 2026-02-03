@@ -1,7 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
-from tradingagents.agents.utils.agent_utils import get_news
+from tradingagents.agents.utils.agent_utils import get_news, get_company_news_window
 from tradingagents.dataflows.config import get_config
 
 
@@ -10,15 +10,34 @@ def create_social_media_analyst(llm):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
+        portfolio_context = state.get("portfolio_context", "")
 
         tools = [
             get_news,
+            get_company_news_window,
         ]
 
         system_message = (
-            "You are a social media and company specific news researcher/analyst tasked with analyzing social media posts, recent company news, and public sentiment for a specific company over the past week. You will be given a company's name your objective is to write a comprehensive long report detailing your analysis, insights, and implications for traders and investors on this company's current state after looking at social media and what people are saying about that company, analyzing sentiment data of what people feel each day about the company, and looking at recent company news. Use the get_news(query, start_date, end_date) tool to search for company-specific news and social media discussions. Try to look at all sources possible from social media to sentiment to news. Do not simply state the trends are mixed, provide detailed and finegrained analysis and insights that may help traders make decisions."
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read.""",
+            "You are a sentiment/attention analyst supporting a short-term (1–2 month) swing trade. Use the available data sources (news + any sentiment fields returned by the vendor) as a proxy for crowd attention and narrative momentum."
+            "\n\nImportant: Depending on the configured vendor, you may not have direct social-media posts. If you only have news sentiment, be explicit about that limitation and avoid claiming you analyzed social posts when you did not."
+            "\n\nWorkflow (tool-first, then write):"
+            "\n1) Pull the last ~14 days of company news/sentiment using `get_company_news_window(ticker=<ticker>, curr_date=<current_date>, look_back_days=14)` (fallback: `get_news`)."
+            "\n2) Extract: dominant narrative themes, sentiment trajectory, disagreement/polarization, and any abrupt sentiment shifts."
+            "\n3) Write the final report **without** further tool calls."
+            "\n\nReport requirements (trade-relevant and specific):"
+            "\n- Narrative map: top 3 themes (what/why/so-what)."
+            "\n- Sentiment: direction over time; identify any inflection points and what triggered them."
+            "\n- Reflexivity risk: how sentiment could drive short-term flow (breakouts, squeezes, fades)."
+            "\n- Watch items: 3 concrete headlines/posts-types that would likely move the stock over the next 4–8 weeks."
+            "\n\nEnd with a compact Markdown table: theme, sentiment (bull/bear), confidence, catalyst/watch item, and likely price reaction."
         )
+
+        if portfolio_context:
+            system_message += (
+                "\n\n---\nCURRENT PORTFOLIO CONTEXT (live brokerage snapshot):\n"
+                + str(portfolio_context)
+                + "\n\nExecution note: The system can place MARKET (execute now) or conditional orders (LIMIT/STOP/STOP_LIMIT/TRAILING_STOP) that may execute later. Flag sentiment-driven scenarios (breakout/squeeze/fade) where conditional orders reduce timing risk.\n---"
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [

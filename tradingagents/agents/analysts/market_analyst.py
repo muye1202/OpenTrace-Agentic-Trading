@@ -2,6 +2,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
 from tradingagents.agents.utils.agent_utils import get_stock_data, get_indicators
+from tradingagents.agents.utils.price_action_tools import get_price_action_summary
 from tradingagents.dataflows.config import get_config
 
 
@@ -11,14 +12,30 @@ def create_market_analyst(llm):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
         company_name = state["company_of_interest"]
+        portfolio_context = state.get("portfolio_context", "")
 
         tools = [
             get_stock_data,
             get_indicators,
+            get_price_action_summary,
         ]
 
         system_message = (
-            """You are a trading assistant tasked with analyzing financial markets. Your role is to select the **most relevant indicators** for a given market condition or trading strategy from the following list. The goal is to choose up to **8 indicators** that provide complementary insights without redundancy. Categories and each category's indicators are:
+            """You are a short-term (1–2 month) swing-trade market analyst. Your goal is to produce a concise, decision-grade technical + price-action report for the target ticker using daily data.
+
+Operating horizon and output:
+- Target holding period: ~20–60 trading days (1–2 months).
+- Prioritize: trend regime, momentum/mean reversion, volatility/liquidity, actionable levels, and a risk-aware trade plan.
+- Avoid: long-term investing narratives; focus on what matters for the next 4–8 weeks.
+
+Workflow (tool-first, then write):
+1) Call `get_price_action_summary(symbol=<ticker>, curr_date=<current_date>)` to ground the analysis (returns/vol/ATR, key levels, volume + gap risk).
+2) Select 4–6 indicators (max 6) from the allowed list below that add *non-redundant* information for a 1–2 month horizon.
+3) For each selected indicator, call `get_indicators(symbol=<ticker>, indicator=..., curr_date=<current_date>, look_back_days=90)` (use ~90 days for context). Use the exact indicator names.
+   - If a vendor replies that an indicator isn't available (e.g., VWMA on Alpha Vantage), substitute another from the list and continue.
+4) After you have the data, write the final report **without** further tool calls.
+
+Allowed indicators (exact names):
 
 Moving Averages:
 - close_50_sma: 50 SMA: A medium-term trend indicator. Usage: Identify trend direction and serve as dynamic support/resistance. Tips: It lags price; combine with faster indicators for timely signals.
@@ -41,10 +58,24 @@ Volatility Indicators:
 
 Volume-Based Indicators:
 - vwma: VWMA: A moving average weighted by volume. Usage: Confirm trends by integrating price action with volume data. Tips: Watch for skewed results from volume spikes; use in combination with other volume analyses.
+- mfi: MFI: Money Flow Index (price+volume momentum). Usage: Overbought/oversold and buying/selling pressure; divergences can signal reversals. Tips: Best as a confirmation, not a standalone trigger.
 
-- Select indicators that provide diverse and complementary information. Avoid redundancy (e.g., do not select both rsi and stochrsi). Also briefly explain why they are suitable for the given market context. When you tool call, please use the exact name of the indicators provided above as they are defined parameters, otherwise your call will fail. Please make sure to call get_stock_data first to retrieve the CSV that is needed to generate indicators. Then use get_indicators with the specific indicator names. Write a very detailed and nuanced report of the trends you observe. Do not simply state the trends are mixed, provide detailed and finegrained analysis and insights that may help traders make decisions."""
-            + """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
+Report requirements (keep it to-the-point, but specific):
+- Regime: trend vs range + evidence (levels, momentum, vol).
+- Key levels: supports/resistances, invalidation level(s), breakout/breakdown triggers.
+- Volatility/liquidity: ATR% implications for stop placement; volume + gap risk notes.
+- Setup(s) for the next 4–8 weeks: 1–2 candidate trade plans with entry zone, stop, 1–2 targets, and a time-stop.
+- Risks/catalysts: what news/earnings/macro surprises could break the setup (don’t invent dates).
+- End with a compact Markdown table summarizing: regime, bias, key levels, trigger, stop, targets, time horizon, and top risks.
+"""
         )
+
+        if portfolio_context:
+            system_message += (
+                "\n\n---\nCURRENT PORTFOLIO CONTEXT (live brokerage snapshot):\n"
+                + str(portfolio_context)
+                + "\n\nExecution note: The system can place MARKET (execute now) or conditional orders (LIMIT/STOP/STOP_LIMIT/TRAILING_STOP) that may execute later. Provide levels/triggers compatible with those order types.\n---"
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [

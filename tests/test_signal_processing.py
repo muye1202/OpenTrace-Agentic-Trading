@@ -51,6 +51,110 @@ FINAL TRADING DECISION:
         self.assertEqual(structured["ticker"], "TSLA")
         self.assertEqual(structured["quantity"], 15)
 
+    def test_stop_order_parses_stop_price_and_tif(self):
+        processor = SignalProcessor(quick_thinking_llm=None)
+
+        text = """
+---
+FINAL TRANSACTION PROPOSAL:
+- ACTION: SELL
+- TICKER: AAPL
+- QUANTITY: 10
+- ORDER_TYPE: STOP
+- TIME_IN_FORCE: GTC
+- STOP_PRICE: $187.50
+- LIMIT_PRICE: N/A
+- TRAIL_PERCENT: N/A
+- TRAIL_PRICE: N/A
+---
+"""
+        structured = processor.extract_structured_decision(text)
+        self.assertEqual(structured["order_type"], "STOP")
+        self.assertEqual(structured["time_in_force"], "GTC")
+        self.assertEqual(structured["stop_price"], 187.50)
+
+    def test_stop_limit_parses_both_prices(self):
+        processor = SignalProcessor(quick_thinking_llm=None)
+
+        text = """
+---
+FINAL TRADING DECISION:
+- ACTION: BUY
+- TICKER: TSLA
+- QUANTITY: 5
+- ORDER_TYPE: STOP_LIMIT
+- TIME_IN_FORCE: DAY
+- STOP_PRICE: 200
+- LIMIT_PRICE: 198.25
+- TRAIL_PERCENT: N/A
+- TRAIL_PRICE: N/A
+---
+"""
+        structured = processor.extract_structured_decision(text)
+        self.assertEqual(structured["order_type"], "STOP_LIMIT")
+        self.assertEqual(structured["stop_price"], 200.0)
+        self.assertEqual(structured["limit_price"], 198.25)
+
+    def test_trailing_stop_percent(self):
+        processor = SignalProcessor(quick_thinking_llm=None)
+
+        text = """
+---
+FINAL TRADING DECISION:
+- ACTION: SELL
+- TICKER: TSLA
+- QUANTITY: 15
+- ORDER_TYPE: TRAILING_STOP
+- TIME_IN_FORCE: DAY
+- TRAIL_PERCENT: 3
+- TRAIL_PRICE: N/A
+---
+"""
+        structured = processor.extract_structured_decision(text)
+        self.assertEqual(structured["order_type"], "TRAILING_STOP")
+        self.assertEqual(structured["trail_percent"], 3.0)
+        self.assertIsNone(structured["trail_price"])
+
+    def test_trailing_stop_price(self):
+        processor = SignalProcessor(quick_thinking_llm=None)
+
+        text = """
+---
+FINAL TRADING DECISION:
+- ACTION: SELL
+- TICKER: TSLA
+- QUANTITY: 15
+- ORDER_TYPE: TRAILING_STOP
+- TIME_IN_FORCE: DAY
+- TRAIL_PERCENT: N/A
+- TRAIL_PRICE: 1.25
+---
+"""
+        structured = processor.extract_structured_decision(text)
+        self.assertEqual(structured["order_type"], "TRAILING_STOP")
+        self.assertEqual(structured["trail_price"], 1.25)
+        self.assertIsNone(structured["trail_percent"])
+
+    def test_trailing_stop_invalid_both_set(self):
+        processor = SignalProcessor(quick_thinking_llm=None)
+
+        text = """
+---
+FINAL TRADING DECISION:
+- ACTION: SELL
+- TICKER: TSLA
+- QUANTITY: 15
+- ORDER_TYPE: TRAILING_STOP
+- TIME_IN_FORCE: DAY
+- TRAIL_PERCENT: 3
+- TRAIL_PRICE: 1.25
+---
+"""
+        structured = processor.extract_structured_decision(text)
+        self.assertEqual(structured["order_type"], "TRAILING_STOP")
+        self.assertIsNone(structured["trail_percent"])
+        self.assertIsNone(structured["trail_price"])
+
 
 if __name__ == "__main__":
     unittest.main()

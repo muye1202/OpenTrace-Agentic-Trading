@@ -9,7 +9,13 @@ _ALPACA_IMPORT_ERROR: Exception | None = None
 
 try:  # Optional dependency: alpaca-py
     from alpaca.trading.client import TradingClient  # type: ignore
-    from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest  # type: ignore
+    from alpaca.trading.requests import (  # type: ignore
+        MarketOrderRequest,
+        LimitOrderRequest,
+        StopOrderRequest,
+        StopLimitOrderRequest,
+        TrailingStopOrderRequest,
+    )
     from alpaca.trading.enums import OrderSide, TimeInForce, OrderType  # type: ignore
     from alpaca.data.historical import StockHistoricalDataClient  # type: ignore
     from alpaca.data.requests import StockLatestQuoteRequest  # type: ignore
@@ -17,6 +23,9 @@ except Exception as e:  # pragma: no cover
     TradingClient = None  # type: ignore[assignment]
     MarketOrderRequest = None  # type: ignore[assignment]
     LimitOrderRequest = None  # type: ignore[assignment]
+    StopOrderRequest = None  # type: ignore[assignment]
+    StopLimitOrderRequest = None  # type: ignore[assignment]
+    TrailingStopOrderRequest = None  # type: ignore[assignment]
     OrderSide = None  # type: ignore[assignment]
     TimeInForce = None  # type: ignore[assignment]
     OrderType = None  # type: ignore[assignment]
@@ -24,11 +33,195 @@ except Exception as e:  # pragma: no cover
     StockLatestQuoteRequest = None  # type: ignore[assignment]
     _ALPACA_IMPORT_ERROR = e
 from datetime import datetime
+from dataclasses import dataclass
 from typing import Dict, Any, Optional, Literal
 import os
 import logging
 from pathlib import Path
 import json
+import re
+
+
+@dataclass(frozen=True)
+class OrderSpec:
+    order_type: str
+    time_in_force: str
+    limit_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    trail_percent: Optional[float] = None
+    trail_price: Optional[float] = None
+    requested_limit_price: Optional[float] = None
+
+
+def _normalize_order_type(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    v = str(value).strip().upper()
+    if not v:
+        return None
+    v = v.replace("-", "_").replace(" ", "_")
+
+    mapping = {
+        "MKT": "MARKET",
+        "MARKET": "MARKET",
+        "LMT": "LIMIT",
+        "LIMIT": "LIMIT",
+        "STOP": "STOP",
+        "STOPLIMIT": "STOP_LIMIT",
+        "STOP_LIMIT": "STOP_LIMIT",
+        "STOP_LIMIT_ORDER": "STOP_LIMIT",
+        "TRAILINGSTOP": "TRAILING_STOP",
+        "TRAILING_STOP": "TRAILING_STOP",
+        "TRAIL_STOP": "TRAILING_STOP",
+        "TRAILING": "TRAILING_STOP",
+    }
+    out = mapping.get(v)
+    if out in {"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"}:
+        return out
+    return None
+
+
+def _normalize_time_in_force(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    v = str(value).strip().upper()
+    if not v:
+        return None
+    v = v.replace("-", "_").replace(" ", "_")
+    if v in {"DAY", "GTC"}:
+        return v
+    return None
+
+
+def _parse_floatish(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return float(value)
+        except Exception:
+            return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if s.upper() in {"N/A", "NA", "NONE", "-"}:
+        return None
+    m = re.search(r"([-+]?\d[\d,]*\.?\d*)", s.replace("%", ""))
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", ""))
+    except Exception:
+        return None
+
+
+def normalize_order_inputs(
+    *,
+    default_order_type: str,
+    default_time_in_force: str,
+    side: str,
+    current_price: float,
+    limit_price_offset_pct: float,
+    agent_order_type: Optional[str] = None,
+    agent_time_in_force: Optional[str] = None,
+    agent_limit_price: Optional[float] = None,
+    agent_stop_price: Optional[float] = None,
+    agent_trail_percent: Optional[float] = None,
+    agent_trail_price: Optional[float] = None,
+) -> tuple[Optional[OrderSpec], Optional[str]]:
+    """
+    Pure validation/normalization helper for AlpacaExecutor.
+
+    Returns (OrderSpec, error). This function does not call the network and does not
+    require alpaca-py to be installed.
+    """
+    agent_ot = _normalize_order_type(agent_order_type) if agent_order_type is not None else None
+    if agent_order_type is not None and str(agent_order_type).strip() and agent_ot is None:
+        return None, f"Unsupported ORDER_TYPE '{agent_order_type}'."
+
+    agent_tif = _normalize_time_in_force(agent_time_in_force) if agent_time_in_force is not None else None
+    if agent_time_in_force is not None and str(agent_time_in_force).strip() and agent_tif is None:
+        return None, f"Unsupported TIME_IN_FORCE '{agent_time_in_force}'. Use DAY or GTC."
+
+    order_type = agent_ot or _normalize_order_type(default_order_type) or "MARKET"
+    tif = agent_tif or _normalize_time_in_force(default_time_in_force) or "DAY"
+    side_u = str(side).strip().upper()
+
+    limit_price = _parse_floatish(agent_limit_price)
+    stop_price = _parse_floatish(agent_stop_price)
+    trail_percent = _parse_floatish(agent_trail_percent)
+    trail_price = _parse_floatish(agent_trail_price)
+
+    if current_price <= 0:
+        return None, "Current price must be positive."
+
+    if order_type == "MARKET":
+        return OrderSpec(order_type=order_type, time_in_force=tif), None
+
+    if order_type == "LIMIT":
+        requested_limit_price: Optional[float] = None
+        if limit_price is None:
+            if side_u == "BUY":
+                limit_price = current_price * (1 + float(limit_price_offset_pct))
+            else:
+                limit_price = current_price * (1 - float(limit_price_offset_pct))
+            requested_limit_price = round(float(limit_price), 2)
+            limit_price = requested_limit_price
+        else:
+            if limit_price <= 0:
+                return None, "LIMIT_PRICE must be positive."
+            requested_limit_price = round(float(limit_price), 2)
+            limit_price = requested_limit_price
+        return (
+            OrderSpec(
+                order_type=order_type,
+                time_in_force=tif,
+                limit_price=limit_price,
+                requested_limit_price=requested_limit_price,
+            ),
+            None,
+        )
+
+    if order_type == "STOP":
+        if stop_price is None or stop_price <= 0:
+            return None, "STOP_PRICE is required and must be positive for STOP orders."
+        return OrderSpec(order_type=order_type, time_in_force=tif, stop_price=round(float(stop_price), 2)), None
+
+    if order_type == "STOP_LIMIT":
+        if stop_price is None or stop_price <= 0:
+            return None, "STOP_PRICE is required and must be positive for STOP_LIMIT orders."
+        if limit_price is None or limit_price <= 0:
+            return None, "LIMIT_PRICE is required and must be positive for STOP_LIMIT orders."
+        return (
+            OrderSpec(
+                order_type=order_type,
+                time_in_force=tif,
+                stop_price=round(float(stop_price), 2),
+                limit_price=round(float(limit_price), 2),
+                requested_limit_price=round(float(limit_price), 2),
+            ),
+            None,
+        )
+
+    if order_type == "TRAILING_STOP":
+        if (trail_percent is None and trail_price is None) or (trail_percent is not None and trail_price is not None):
+            return None, "TRAILING_STOP requires exactly one of TRAIL_PERCENT or TRAIL_PRICE."
+        if trail_percent is not None:
+            if trail_percent <= 0:
+                return None, "TRAIL_PERCENT must be positive."
+            return (
+                OrderSpec(order_type=order_type, time_in_force=tif, trail_percent=float(trail_percent)),
+                None,
+            )
+        if trail_price is not None:
+            if trail_price <= 0:
+                return None, "TRAIL_PRICE must be positive."
+            return (
+                OrderSpec(order_type=order_type, time_in_force=tif, trail_price=round(float(trail_price), 2)),
+                None,
+            )
+
+    return None, f"Unsupported ORDER_TYPE '{agent_order_type}'."
 
 
 def _clean_url(value: Optional[str]) -> Optional[str]:
@@ -111,7 +304,10 @@ class AlpacaExecutor:
         paper: bool = True,
         position_size_pct: float = 0.10,  # Use 10% of portfolio per position
         max_position_size_usd: Optional[float] = None,
-        order_type: Literal["market", "limit"] = "market",
+        max_concentration_pct: float = 0.20,
+        skip_if_open_orders_exist: bool = True,
+        order_type: str = "market",
+        time_in_force: str = "DAY",
         limit_price_offset_pct: float = 0.001,  # 0.1% offset for limit orders
         log_dir: Optional[str] = None
     ):
@@ -124,7 +320,10 @@ class AlpacaExecutor:
             paper: Use paper trading (True) or live trading (False)
             position_size_pct: Percentage of portfolio to allocate per position
             max_position_size_usd: Maximum dollar amount per position (overrides pct if set)
-            order_type: Order type - "market" or "limit"
+            max_concentration_pct: Maximum position concentration as % of equity (default 0.20)
+            skip_if_open_orders_exist: If True, skip new orders when open orders exist for the ticker
+            order_type: Default order type (market/limit/stop/stop_limit/trailing_stop)
+            time_in_force: Default time in force (DAY/GTC)
             limit_price_offset_pct: Offset percentage for limit orders
             log_dir: Directory for execution logs
         """
@@ -194,7 +393,10 @@ class AlpacaExecutor:
         # Trading parameters
         self.position_size_pct = position_size_pct
         self.max_position_size_usd = max_position_size_usd
-        self.order_type = order_type
+        self.max_concentration_pct = float(max_concentration_pct)
+        self.skip_if_open_orders_exist = bool(skip_if_open_orders_exist)
+        self.order_type = str(order_type)
+        self.time_in_force = str(time_in_force)
         self.limit_price_offset_pct = limit_price_offset_pct
 
         # Setup logging
@@ -242,6 +444,11 @@ class AlpacaExecutor:
         trade_date: Optional[str] = None,
         agent_quantity: Optional[int] = None,
         agent_limit_price: Optional[float] = None,
+        agent_order_type: Optional[str] = None,
+        agent_time_in_force: Optional[str] = None,
+        agent_stop_price: Optional[float] = None,
+        agent_trail_percent: Optional[float] = None,
+        agent_trail_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Execute a trading signal from TradingAgents.
@@ -279,6 +486,11 @@ class AlpacaExecutor:
                       ticker, current_position, account,
                       agent_quantity=agent_quantity,
                       agent_limit_price=agent_limit_price,
+                      agent_order_type=agent_order_type,
+                      agent_time_in_force=agent_time_in_force,
+                      agent_stop_price=agent_stop_price,
+                      agent_trail_percent=agent_trail_percent,
+                      agent_trail_price=agent_trail_price,
                   ))
               elif signal == "SELL":
                   result.update(self._execute_sell(
@@ -287,6 +499,11 @@ class AlpacaExecutor:
                       account,
                       agent_quantity=agent_quantity,
                       agent_limit_price=agent_limit_price,
+                      agent_order_type=agent_order_type,
+                      agent_time_in_force=agent_time_in_force,
+                      agent_stop_price=agent_stop_price,
+                      agent_trail_percent=agent_trail_percent,
+                      agent_trail_price=agent_trail_price,
                   ))
               elif signal == "HOLD":
                   self.logger.info(f"{ticker}: HOLD - No action taken")
@@ -312,25 +529,38 @@ class AlpacaExecutor:
         account: Any,
         agent_quantity: Optional[int] = None,
         agent_limit_price: Optional[float] = None,
+        agent_order_type: Optional[str] = None,
+        agent_time_in_force: Optional[str] = None,
+        agent_stop_price: Optional[float] = None,
+        agent_trail_percent: Optional[float] = None,
+        agent_trail_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Execute BUY signal."""
-        # Check if we already have a position
-        if current_position and float(current_position.qty) > 0:
-            self.logger.info(
-                f"{ticker}: Already holding {current_position.qty} shares, "
-                "skipping BUY"
-            )
-            return {
-                "executed": False,
-                "message": f"Already holding {current_position.qty} shares"
-            }
+        # Portfolio-aware sizing: allow adds, but enforce concentration cap.
+        cash_available = float(getattr(account, "cash", 0.0) or 0.0)
+        equity = float(getattr(account, "equity", 0.0) or 0.0)
 
-        # Calculate position size
-        cash_available = float(account.cash)
-        target_value = cash_available * self.position_size_pct
+        held_qty = 0.0
+        held_value = 0.0
+        if current_position is not None:
+            try:
+                held_qty = float(getattr(current_position, "qty", 0.0) or 0.0)
+            except Exception:
+                held_qty = 0.0
+            try:
+                held_value = float(getattr(current_position, "market_value", 0.0) or 0.0)
+            except Exception:
+                held_value = 0.0
 
+        max_position_value = max(0.0, equity * float(self.max_concentration_pct))
+        max_additional_value = max(0.0, max_position_value - held_value) if max_position_value else None
+
+        # Determine target notional from cash, then apply hard caps.
+        target_value = cash_available * float(self.position_size_pct)
         if self.max_position_size_usd:
-            target_value = min(target_value, self.max_position_size_usd)
+            target_value = min(target_value, float(self.max_position_size_usd))
+        if max_additional_value is not None:
+            target_value = min(target_value, max_additional_value)
 
         # Get current price
         quote = self._get_latest_quote(ticker)
@@ -341,10 +571,34 @@ class AlpacaExecutor:
         if not current_price:
             return {"executed": False, "error": "Quote missing ask/bid price"}
 
+        # If concentration cap blocks any add, stop here.
+        if max_additional_value is not None and max_additional_value <= 0:
+            return {
+                "executed": False,
+                "message": f"BUY blocked: position already at/above concentration cap ({self.max_concentration_pct:.0%})",
+                "held_qty": held_qty,
+                "held_value": held_value,
+                "equity": equity,
+            }
+
+        # Guardrail: skip if open orders exist for this ticker.
+        if self.skip_if_open_orders_exist:
+            open_orders = self._get_open_orders(ticker)
+            if open_orders:
+                return {
+                    "executed": False,
+                    "message": f"Skipped BUY: existing open orders for {ticker.upper()} detected",
+                    "open_orders": [self._order_brief(o) for o in open_orders],
+                }
+
         # Use agent-specified quantity if provided, otherwise calculate
         if agent_quantity and agent_quantity > 0:
             max_affordable = int(cash_available / current_price)
-            qty = min(agent_quantity, max_affordable)
+            qty = min(int(agent_quantity), max_affordable)
+            # Enforce concentration cap in share terms.
+            if max_additional_value is not None:
+                max_additional_qty = int(max_additional_value / current_price)
+                qty = min(qty, max_additional_qty)
             self.logger.info(
                 f"{ticker}: Agent requested {agent_quantity} shares, "
                 f"capped to {qty} by available cash ${cash_available:,.2f}"
@@ -360,7 +614,21 @@ class AlpacaExecutor:
             }
 
         # Place order
-        order, requested_limit_price = self._place_order(ticker, qty, OrderSide.BUY, current_price)
+        try:
+            order, requested_limit_price, order_spec = self._place_order(
+                ticker=ticker,
+                qty=qty,
+                side=OrderSide.BUY,
+                current_price=current_price,
+                agent_order_type=agent_order_type,
+                agent_time_in_force=agent_time_in_force,
+                agent_limit_price=agent_limit_price,
+                agent_stop_price=agent_stop_price,
+                agent_trail_percent=agent_trail_percent,
+                agent_trail_price=agent_trail_price,
+            )
+        except Exception as e:
+            return {"executed": False, "error": str(e)}
 
         self.logger.info(
             f"{ticker}: BUY order placed - {qty} shares at ~${current_price:.2f}"
@@ -374,6 +642,7 @@ class AlpacaExecutor:
             "side": "BUY",
             "quote": quote,
             "requested_limit_price": requested_limit_price,
+            "order_spec": order_spec.__dict__,
         }
 
     def _execute_sell(
@@ -383,6 +652,11 @@ class AlpacaExecutor:
         account: Any,
         agent_quantity: Optional[int] = None,
         agent_limit_price: Optional[float] = None,
+        agent_order_type: Optional[str] = None,
+        agent_time_in_force: Optional[str] = None,
+        agent_stop_price: Optional[float] = None,
+        agent_trail_percent: Optional[float] = None,
+        agent_trail_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Execute SELL signal."""
         # Check if we have a position to sell
@@ -416,8 +690,32 @@ class AlpacaExecutor:
         if not current_price:
             return {"executed": False, "error": "Quote missing bid/ask price"}
 
+        # Guardrail: skip if open orders exist for this ticker.
+        if self.skip_if_open_orders_exist:
+            open_orders = self._get_open_orders(ticker)
+            if open_orders:
+                return {
+                    "executed": False,
+                    "message": f"Skipped SELL: existing open orders for {ticker.upper()} detected",
+                    "open_orders": [self._order_brief(o) for o in open_orders],
+                }
+
         # Place sell order
-        order, requested_limit_price = self._place_order(ticker, qty, OrderSide.SELL, current_price)
+        try:
+            order, requested_limit_price, order_spec = self._place_order(
+                ticker=ticker,
+                qty=qty,
+                side=OrderSide.SELL,
+                current_price=current_price,
+                agent_order_type=agent_order_type,
+                agent_time_in_force=agent_time_in_force,
+                agent_limit_price=agent_limit_price,
+                agent_stop_price=agent_stop_price,
+                agent_trail_percent=agent_trail_percent,
+                agent_trail_price=agent_trail_price,
+            )
+        except Exception as e:
+            return {"executed": False, "error": str(e)}
 
         self.logger.info(
             f"{ticker}: SELL order placed - {qty} shares at ~${current_price:.2f}"
@@ -431,6 +729,7 @@ class AlpacaExecutor:
             "side": "SELL",
             "quote": quote,
             "requested_limit_price": requested_limit_price,
+            "order_spec": order_spec.__dict__,
         }
 
     def _place_order(
@@ -438,34 +737,96 @@ class AlpacaExecutor:
         ticker: str,
         qty: int,
         side: OrderSide,
-        current_price: float
-    ) -> tuple[Any, Optional[float]]:
-        """Place order with Alpaca."""
-        requested_limit_price: Optional[float] = None
-        if self.order_type == "market":
-            request = MarketOrderRequest(
-                symbol=ticker,
-                qty=qty,
-                side=side,
-                time_in_force=TimeInForce.DAY
-            )
-        else:  # limit order
-            # Calculate limit price with offset
-            if side == OrderSide.BUY:
-                limit_price = current_price * (1 + self.limit_price_offset_pct)
-            else:
-                limit_price = current_price * (1 - self.limit_price_offset_pct)
+        current_price: float,
+        agent_order_type: Optional[str] = None,
+        agent_time_in_force: Optional[str] = None,
+        agent_limit_price: Optional[float] = None,
+        agent_stop_price: Optional[float] = None,
+        agent_trail_percent: Optional[float] = None,
+        agent_trail_price: Optional[float] = None,
+    ) -> tuple[Any, Optional[float], OrderSpec]:
+        """Place order with Alpaca (supports market/limit/stop/stop-limit/trailing-stop)."""
+        if MarketOrderRequest is None:
+            raise RuntimeError(
+                "Alpaca execution requires the 'alpaca-py' package. Install it to enable execution."
+            ) from _ALPACA_IMPORT_ERROR
 
-            requested_limit_price = round(limit_price, 2)
+        spec, err = normalize_order_inputs(
+            default_order_type=self.order_type,
+            default_time_in_force=self.time_in_force,
+            side=getattr(side, "value", str(side)),
+            current_price=float(current_price),
+            limit_price_offset_pct=float(self.limit_price_offset_pct),
+            agent_order_type=agent_order_type,
+            agent_time_in_force=agent_time_in_force,
+            agent_limit_price=agent_limit_price,
+            agent_stop_price=agent_stop_price,
+            agent_trail_percent=agent_trail_percent,
+            agent_trail_price=agent_trail_price,
+        )
+        if err or spec is None:
+            raise ValueError(err or "Invalid order specification.")
+
+        # Map TIF to alpaca enum when available.
+        tif = None
+        if TimeInForce is not None:
+            try:
+                tif = getattr(TimeInForce, spec.time_in_force)
+            except Exception:
+                tif = TimeInForce.DAY
+        tif = tif or spec.time_in_force
+
+        # Build appropriate request object.
+        if spec.order_type == "MARKET":
+            request = MarketOrderRequest(symbol=ticker, qty=qty, side=side, time_in_force=tif)
+        elif spec.order_type == "LIMIT":
             request = LimitOrderRequest(
                 symbol=ticker,
                 qty=qty,
                 side=side,
-                time_in_force=TimeInForce.DAY,
-                limit_price=requested_limit_price
+                time_in_force=tif,
+                limit_price=spec.limit_price,
             )
+        elif spec.order_type == "STOP":
+            if StopOrderRequest is None:
+                raise RuntimeError("Stop orders require alpaca-py StopOrderRequest.")
+            request = StopOrderRequest(
+                symbol=ticker,
+                qty=qty,
+                side=side,
+                time_in_force=tif,
+                stop_price=spec.stop_price,
+            )
+        elif spec.order_type == "STOP_LIMIT":
+            if StopLimitOrderRequest is None:
+                raise RuntimeError("Stop-limit orders require alpaca-py StopLimitOrderRequest.")
+            request = StopLimitOrderRequest(
+                symbol=ticker,
+                qty=qty,
+                side=side,
+                time_in_force=tif,
+                stop_price=spec.stop_price,
+                limit_price=spec.limit_price,
+            )
+        elif spec.order_type == "TRAILING_STOP":
+            if TrailingStopOrderRequest is None:
+                raise RuntimeError("Trailing stop orders require alpaca-py TrailingStopOrderRequest.")
+            request_kwargs: Dict[str, Any] = {
+                "symbol": ticker,
+                "qty": qty,
+                "side": side,
+                "time_in_force": tif,
+            }
+            if spec.trail_percent is not None:
+                request_kwargs["trail_percent"] = spec.trail_percent
+            if spec.trail_price is not None:
+                request_kwargs["trail_price"] = spec.trail_price
+            request = TrailingStopOrderRequest(**request_kwargs)
+        else:
+            raise ValueError(f"Unsupported ORDER_TYPE '{spec.order_type}'.")
 
-        return self.trading_client.submit_order(request), requested_limit_price
+        order = self.trading_client.submit_order(request)
+        return order, spec.requested_limit_price, spec
 
     def _get_position(self, ticker: str) -> Optional[Any]:
         """Get current position for ticker."""
@@ -473,6 +834,104 @@ class AlpacaExecutor:
             return self.trading_client.get_open_position(ticker)
         except Exception:
             return None
+
+    def _order_brief(self, order: Any) -> Dict[str, Any]:
+        """Best-effort summary of an order object (for guardrail messaging)."""
+        def _val(x, attr: str):
+            v = getattr(x, attr, None)
+            if hasattr(v, "value"):
+                return v.value
+            return v
+
+        return {
+            "id": str(getattr(order, "id", "") or ""),
+            "symbol": str(getattr(order, "symbol", "") or ""),
+            "qty": str(getattr(order, "qty", "") or ""),
+            "side": _val(order, "side"),
+            "type": _val(order, "type"),
+            "status": _val(order, "status"),
+        }
+
+    def _get_open_orders(self, ticker: str) -> list[Any]:
+        """
+        Return a list of open orders for the given ticker.
+
+        Uses best-effort compatibility across alpaca-py versions (request-based vs kwargs APIs).
+        If the client cannot list orders, returns an empty list (guardrail becomes no-op).
+        """
+        ticker_u = ticker.upper()
+
+        # First, try request-object API.
+        get_orders = getattr(self.trading_client, "get_orders", None)
+        list_orders = getattr(self.trading_client, "list_orders", None)
+
+        orders: Any = None
+        if callable(get_orders):
+            try:
+                from alpaca.trading.requests import GetOrdersRequest  # type: ignore
+
+                try:
+                    req = GetOrdersRequest(status="open", symbols=[ticker_u])
+                    orders = get_orders(req)
+                except Exception:
+                    orders = None
+            except Exception:
+                orders = None
+
+            if orders is None:
+                # Try kwargs-based API variants.
+                for kwargs in (
+                    {"status": "open", "symbols": [ticker_u]},
+                    {"status": "open"},
+                    {},
+                ):
+                    try:
+                        orders = get_orders(**kwargs)
+                        break
+                    except TypeError:
+                        continue
+                    except Exception:
+                        continue
+
+        if orders is None and callable(list_orders):
+            for kwargs in (
+                {"status": "open", "symbols": [ticker_u]},
+                {"status": "open"},
+                {},
+            ):
+                try:
+                    orders = list_orders(**kwargs)
+                    break
+                except TypeError:
+                    continue
+                except Exception:
+                    continue
+
+        if orders is None:
+            return []
+
+        # Normalize to list.
+        if isinstance(orders, dict):
+            iterable = list(orders.values())
+        else:
+            try:
+                iterable = list(orders)
+            except Exception:
+                iterable = []
+
+        out: list[Any] = []
+        for o in iterable:
+            sym = str(getattr(o, "symbol", "") or "").upper()
+            if sym != ticker_u:
+                continue
+            status = getattr(o, "status", None)
+            status_v = status.value if hasattr(status, "value") else str(status or "")
+            status_u = status_v.upper()
+            # Treat non-terminal statuses as open/pending.
+            if status_u and status_u not in {"FILLED", "CANCELED", "CANCELLED", "REJECTED", "EXPIRED"}:
+                out.append(o)
+
+        return out
 
     def _get_latest_quote(self, ticker: str) -> Optional[Dict[str, Any]]:
         """Get latest quote for ticker (bid/ask)."""
@@ -509,13 +968,16 @@ class AlpacaExecutor:
 
     def _order_to_dict(self, order: Any) -> Dict[str, Any]:
         """Convert Alpaca order object to dictionary."""
+        def _enumish(v):
+            return v.value if hasattr(v, "value") else v
+
         return {
             "id": str(order.id),
             "symbol": order.symbol,
             "qty": str(order.qty),
-            "side": order.side.value,
-            "type": order.type.value,
-            "status": order.status.value,
+            "side": _enumish(getattr(order, "side", None)),
+            "type": _enumish(getattr(order, "type", None)),
+            "status": _enumish(getattr(order, "status", None)),
             "submitted_at": order.submitted_at.isoformat() if order.submitted_at else None
         }
 

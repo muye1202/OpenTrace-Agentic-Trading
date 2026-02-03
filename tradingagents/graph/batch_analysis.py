@@ -168,6 +168,11 @@ class BatchAnalyzer:
                     trade_date=trade_date,
                     agent_quantity=structured.get("quantity"),
                     agent_limit_price=structured.get("limit_price"),
+                    agent_order_type=structured.get("order_type"),
+                    agent_time_in_force=structured.get("time_in_force"),
+                    agent_stop_price=structured.get("stop_price"),
+                    agent_trail_percent=structured.get("trail_percent"),
+                    agent_trail_price=structured.get("trail_price"),
                 )
 
                 execution_results.append({**pick, "execution": result})

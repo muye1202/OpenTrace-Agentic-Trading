@@ -24,11 +24,15 @@ DEFAULT_CONFIG = {
         "dataflows/data_cache",
     ),
 
-    # LLM settings (providers: openai, anthropic, google, deepseek, openrouter, ollama, qwen3-cn)
+    # LLM settings (providers: openai, anthropic, google, deepseek, openrouter, ollama, qwen3-cn, glm)
     "llm_provider": os.getenv("TRADINGAGENTS_LLM_PROVIDER", "openai"),
     "deep_think_llm": "o4-mini",
     "quick_think_llm": "gpt-4o-mini",
     "backend_url": os.getenv("TRADINGAGENTS_BACKEND_URL", "https://api.openai.com/v1"),
+
+    # GLM note:
+    # Some ZhipuAI tiers/models (e.g., glm-4.7-flash) may require no parallel requests.
+    # TradingAgents enforces in-process serialization when the selected model is exactly "glm-4.7-flash".
 
     # Qwen (DashScope) OpenAI-compatible extensions
     # When enabled, we pass DashScope-specific parameters (e.g., enable_thinking) through ChatOpenAI.
@@ -82,6 +86,9 @@ DEFAULT_CONFIG = {
         "paper_trading": True,
         "position_size_pct": 0.10,
         "max_position_size_usd": None,
+        # Execution-time risk guardrails (also enforced by prompts, but executor is source of truth)
+        "max_concentration_pct": 0.20,
+        "skip_if_open_orders_exist": True,
         "order_type": "market",  # or "limit"
         "limit_price_offset_pct": 0.001,
     },

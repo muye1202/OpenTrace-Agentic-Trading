@@ -52,6 +52,17 @@ def extract_content_string(content):
     """Extract string content from various message formats."""
     if isinstance(content, str):
         return content
+    elif isinstance(content, dict):
+        if isinstance(content.get("text"), str):
+            return content["text"]
+        if isinstance(content.get("content"), str):
+            return content["content"]
+        if isinstance(content.get("message"), dict):
+            return extract_content_string(content.get("message"))
+        try:
+            return json.dumps(content, ensure_ascii=False)
+        except Exception:
+            return str(content)
     elif isinstance(content, list):
         # Handle Anthropic's list format
         text_parts = []
@@ -61,6 +72,10 @@ def extract_content_string(content):
                     text_parts.append(item.get('text', ''))
                 elif item.get('type') == 'tool_use':
                     text_parts.append(f"[Tool: {item.get('name', 'unknown')}]")
+                elif isinstance(item.get("text"), str):
+                    text_parts.append(item.get("text", ""))
+                elif isinstance(item.get("content"), str):
+                    text_parts.append(item.get("content", ""))
             else:
                 text_parts.append(str(item))
         return ' '.join(text_parts)
@@ -99,7 +114,6 @@ def run_analysis():
             "enabled": bool(exec_sel.get("enabled", False)),
             "paper_trading": bool(exec_sel.get("paper", True)),
             "position_size_pct": float(exec_sel.get("position_size_pct", config.get("alpaca_execution", {}).get("position_size_pct", 0.10) or 0.10)),
-            "order_type": str(exec_sel.get("order_type", config.get("alpaca_execution", {}).get("order_type", "market"))),
         }
 
     # Initialize the graph
@@ -773,7 +787,6 @@ def run_analysis():
                 if getattr(executor, "data_base_url", None):
                     lines.append(f"- Data URL: `{executor.data_base_url}`")
                 lines.append(f"- Paper trading: `{exec_sel.get('paper', True)}`")
-                lines.append(f"- Order type: `{exec_sel.get('order_type', 'market')}`")
                 lines.append(f"- Position size pct: `{exec_sel.get('position_size_pct', 0.10)}`")
                 lines.append("")
 
