@@ -9,7 +9,7 @@ This module provides tools for discovering promising stocks using:
 - Multi-signal intelligence synthesis
 """
 
-from .intelligence_sub_agents import (
+from .intelligence import (
     IntelligenceScanner,
     IntelligenceResult,
     SectorSignal,

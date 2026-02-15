@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from tradingagents.agents.discovery.intelligence_sub_agents import (
+from tradingagents.agents.discovery.intelligence import (
     IntelligenceScanner,
     IntelligenceResult,
 )
