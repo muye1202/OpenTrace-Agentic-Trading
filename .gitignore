@@ -5,6 +5,7 @@ __pycache__/
 .DS_Store
 *.csv
 src/
+!frontend/src
 eval_results/
 eval_data/
 *.egg-info/
