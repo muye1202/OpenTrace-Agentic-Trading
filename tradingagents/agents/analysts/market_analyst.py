@@ -18,7 +18,11 @@ from tradingagents.agents.utils.market_data.short_interest_tools import (
     get_short_interest_data,
     get_squeeze_candidates_assessment,
 )
-from tradingagents.agents.utils.market_data.bundle_tools import get_market_data_bundle
+from tradingagents.agents.utils.market_data.bundle_tools import (
+    get_market_data_bundle,
+    select_bundle_first_tools,
+)
+from tradingagents.agents.utils.agent_runtime.context_budget import build_report_evidence_summary
 from tradingagents.dataflows.config import get_config
 from tradingagents.agents.utils.llm.tool_binding import bind_tools_parallel_safe
 from tradingagents.agents.analysts.tooling import build_tooling_state_update
@@ -49,7 +53,7 @@ def create_market_analyst(llm):
         rounds = state.get("tool_round_counts") or state.get("tool_call_counts") or {}
         rounds_used = int(rounds.get("market", 0) or 0)
         total_rounds_used = int(state.get("tool_call_total", sum(int(v or 0) for v in rounds.values())) or 0)
-        tools = [
+        fallback_tools = [
             # Core tools
             get_stock_data,
             get_indicators,
@@ -67,8 +71,12 @@ def create_market_analyst(llm):
             get_short_interest_data,
             get_squeeze_candidates_assessment,
         ]
-        if enable_bundle_tools:
-            tools = [get_market_data_bundle, *tools]
+        tools = select_bundle_first_tools(
+            get_market_data_bundle,
+            fallback_tools,
+            enable_bundle_tools=enable_bundle_tools,
+            rounds_used=rounds_used,
+        )
 
         system_message = (
             f"""You are a swing-trade market analyst supporting a {holding_text} hold. Your goal is to produce a concise, decision-grade technical + price-action report for the target ticker using daily data.
@@ -161,6 +169,7 @@ Report requirements (keep it to-the-point, but specific):
 - Squeeze risk: If short interest >10%, assess squeeze potential.
 - Setup(s) for {window_text}: 1–2 candidate trade plans with entry zone, stop, 1–2 targets, and a time-stop.
 - Risks/catalysts: what news/earnings/macro surprises could break the setup (don't invent dates).
+- Do not output `FINAL TRANSACTION PROPOSAL`; provide domain bias and evidence only. The trader/risk judge owns executable BUY/HOLD/SELL decisions.
 - End with a compact Markdown table summarizing: regime, bias, key levels, trigger, stop, targets, time horizon, and top risks.
 """
         )
@@ -183,8 +192,6 @@ Report requirements (keep it to-the-point, but specific):
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
                     "For your reference, the current date is {current_date}. The company we want to look at is {ticker}",
                 ),
@@ -218,6 +225,7 @@ Report requirements (keep it to-the-point, but specific):
         return {
             "messages": [result],
             "market_report": report,
+            "market_evidence": build_report_evidence_summary("market", report) if report else "",
             "force_no_tools_for": "",
             **tooling_state,
         }

@@ -66,6 +66,10 @@ class AgentState(_MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    market_evidence: Annotated[str, "Compact evidence summary from the Market Analyst"]
+    sentiment_evidence: Annotated[str, "Compact evidence summary from the Social Media Analyst"]
+    news_evidence: Annotated[str, "Compact evidence summary from the News Analyst"]
+    fundamentals_evidence: Annotated[str, "Compact evidence summary from the Fundamentals Analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[

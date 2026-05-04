@@ -3,8 +3,11 @@ import time
 import json
 from tradingagents.agents.utils.agent_runtime.agent_utils import get_fundamentals, get_balance_sheet, get_cashflow, get_income_statement, get_insider_sentiment, get_insider_transactions
 from tradingagents.agents.utils.agent_runtime.time_horizon import get_time_horizon_spec
-from tradingagents.agents.utils.agent_runtime.context_budget import cap_section, get_budget_settings
-from tradingagents.agents.utils.market_data.bundle_tools import get_fundamentals_data_bundle
+from tradingagents.agents.utils.agent_runtime.context_budget import build_report_evidence_summary
+from tradingagents.agents.utils.market_data.bundle_tools import (
+    get_fundamentals_data_bundle,
+    select_bundle_first_tools,
+)
 from tradingagents.dataflows.config import get_config
 from tradingagents.agents.utils.llm.tool_binding import bind_tools_parallel_safe
 from tradingagents.agents.analysts.tooling import build_tooling_state_update
@@ -31,7 +34,7 @@ def create_fundamentals_analyst(llm):
         rounds = state.get("tool_round_counts") or state.get("tool_call_counts") or {}
         rounds_used = int(rounds.get("fundamentals", 0) or 0)
         total_rounds_used = int(state.get("tool_call_total", sum(int(v or 0) for v in rounds.values())) or 0)
-        tools = [
+        fallback_tools = [
             get_fundamentals,
             get_balance_sheet,
             get_cashflow,
@@ -39,8 +42,12 @@ def create_fundamentals_analyst(llm):
             get_insider_sentiment,
             get_insider_transactions,
         ]
-        if enable_bundle_tools:
-            tools = [get_fundamentals_data_bundle, *tools]
+        tools = select_bundle_first_tools(
+            get_fundamentals_data_bundle,
+            fallback_tools,
+            enable_bundle_tools=enable_bundle_tools,
+            rounds_used=rounds_used,
+        )
 
         system_message = (
             f"You are a fundamentals analyst supporting a {holding_text} swing trade decision. Focus on what can plausibly matter over {window_text} (quality, liquidity/financing risk, earnings sensitivity, and any near-term fundamental catalysts)."
@@ -58,6 +65,7 @@ def create_fundamentals_analyst(llm):
             "\n- Valuation/expectations: whether expectations look stretched vs recent fundamentals (use available ratios; avoid long debates)."
             "\n- Insider activity: summarize net buying/selling and any notable patterns."
             f"\n- Bottom line: bullish/bearish fundamental bias for a {holding_text} horizon + 2–3 concrete risks that would invalidate it."
+            "\n- Do not output `FINAL TRANSACTION PROPOSAL`; provide domain bias and evidence only. The trader/risk judge owns executable BUY/HOLD/SELL decisions."
             f"\n\nEnd with a compact Markdown table summarizing: key metric(s), directionality, why it matters over {window_text}, and the risk if wrong."
         )
 
@@ -76,8 +84,6 @@ def create_fundamentals_analyst(llm):
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
                     "For your reference, the current date is {current_date}. The company we want to look at is {ticker}",
                 ),
@@ -111,6 +117,7 @@ def create_fundamentals_analyst(llm):
         return {
             "messages": [result],
             "fundamentals_report": report,
+            "fundamentals_evidence": build_report_evidence_summary("fundamentals", report) if report else "",
             "force_no_tools_for": "",
             **tooling_state,
         }

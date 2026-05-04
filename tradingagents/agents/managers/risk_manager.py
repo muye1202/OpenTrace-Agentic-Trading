@@ -7,6 +7,7 @@ from tradingagents.agents.utils.agent_runtime.time_horizon import get_time_horiz
 from tradingagents.agents.utils.agent_runtime.context_budget import (
     cap_section,
     cap_sections_with_soft_token_cap,
+    format_analyst_evidence_context,
     get_budget_settings,
     prompt_diagnostics,
 )
@@ -74,32 +75,7 @@ def create_risk_manager(llm, memory):
                 market_session_context,
                 settings["section_max_chars_response"],
             ),
-            "reports": "\n\n".join(
-                [
-                    "Market report:\n"
-                    + cap_section(
-                        "market_report",
-                        market_research_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Sentiment report:\n"
-                    + cap_section(
-                        "sentiment_report",
-                        sentiment_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "News report:\n"
-                    + cap_section(
-                        "news_report", news_report, settings["section_max_chars_report"]
-                    ),
-                    "Fundamentals report:\n"
-                    + cap_section(
-                        "fundamentals_report",
-                        fundamentals_report,
-                        settings["section_max_chars_report"],
-                    ),
-                ]
-            ),
+            "reports": format_analyst_evidence_context(state),
         }
         sections = cap_sections_with_soft_token_cap(
             sections_before, settings["soft_cap_tokens"]
@@ -153,7 +129,7 @@ Guidelines for Decision-Making:
 3. **Refine the Trader's Plan**: Start with the trader's original plan, **{sections["trader_plan"]}**, and adjust it based on the analysts' insights.
 4. **Learn from Past Mistakes**: Use lessons from **{sections["memories"]}** to address prior misjudgments and improve the decision you are making now to make sure you don't make a wrong BUY/SELL/HOLD call that loses money.
 
-Reference analyst reports (compacted):
+Reference analyst evidence context:
 {sections["reports"]}
 
 Deliverables:

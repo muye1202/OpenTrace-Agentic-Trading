@@ -3,6 +3,7 @@ import logging
 from tradingagents.agents.utils.agent_runtime.context_budget import (
     cap_section,
     cap_sections_with_soft_token_cap,
+    format_analyst_evidence_context,
     get_budget_settings,
     prompt_diagnostics,
 )
@@ -51,32 +52,7 @@ def create_safe_debator(llm):
                     ),
                 ]
             ),
-            "reports": "\n\n".join(
-                [
-                    "Market Research Report:\n"
-                    + cap_section(
-                        "market_report",
-                        market_research_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Social Media Sentiment Report:\n"
-                    + cap_section(
-                        "sentiment_report",
-                        sentiment_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Latest World Affairs Report:\n"
-                    + cap_section(
-                        "news_report", news_report, settings["section_max_chars_report"]
-                    ),
-                    "Company Fundamentals Report:\n"
-                    + cap_section(
-                        "fundamentals_report",
-                        fundamentals_report,
-                        settings["section_max_chars_report"],
-                    ),
-                ]
-            ),
+            "reports": format_analyst_evidence_context(state),
             "memories": "",
             "portfolio_context": "",
         }

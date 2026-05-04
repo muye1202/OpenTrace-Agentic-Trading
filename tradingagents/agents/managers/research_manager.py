@@ -7,6 +7,7 @@ from tradingagents.agents.utils.llm.llm_rate_limit import invoke_with_backoff
 from tradingagents.agents.utils.agent_runtime.context_budget import (
     cap_section,
     cap_sections_with_soft_token_cap,
+    format_analyst_evidence_context,
     get_budget_settings,
     prompt_diagnostics,
 )
@@ -49,32 +50,7 @@ def create_research_manager(llm, memory):
             "memories": cap_section(
                 "memories", past_memory_str, settings["section_max_chars_memory"]
             ),
-            "reports": "\n\n".join(
-                [
-                    "Market research report:\n"
-                    + cap_section(
-                        "market_report",
-                        market_research_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Social media sentiment report:\n"
-                    + cap_section(
-                        "sentiment_report",
-                        sentiment_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Latest world affairs news:\n"
-                    + cap_section(
-                        "news_report", news_report, settings["section_max_chars_report"]
-                    ),
-                    "Company fundamentals report:\n"
-                    + cap_section(
-                        "fundamentals_report",
-                        fundamentals_report,
-                        settings["section_max_chars_report"],
-                    ),
-                ]
-            ),
+            "reports": format_analyst_evidence_context(state),
         }
         sections = cap_sections_with_soft_token_cap(
             sections_before, settings["soft_cap_tokens"]
@@ -99,7 +75,7 @@ Take into account your past mistakes on similar situations. Use these insights t
 Here are your past reflections on mistakes:
 \"{sections["memories"]}\"
 
-Here are compacted analyst reports:
+Here is the compact analyst evidence context:
 {sections["reports"]}
 
 Canonical market snapshot for price anchoring:

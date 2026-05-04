@@ -3,7 +3,11 @@ import time
 import json
 from tradingagents.agents.utils.agent_runtime.agent_utils import get_news, get_company_news_window, get_news_sentiment
 from tradingagents.agents.utils.agent_runtime.time_horizon import get_time_horizon_spec
-from tradingagents.agents.utils.market_data.bundle_tools import get_sentiment_data_bundle
+from tradingagents.agents.utils.agent_runtime.context_budget import build_report_evidence_summary
+from tradingagents.agents.utils.market_data.bundle_tools import (
+    get_sentiment_data_bundle,
+    select_bundle_first_tools,
+)
 from tradingagents.dataflows.config import get_config
 from tradingagents.agents.utils.llm.tool_binding import bind_tools_parallel_safe
 from tradingagents.agents.analysts.tooling import build_tooling_state_update
@@ -30,13 +34,17 @@ def create_social_media_analyst(llm):
         rounds = state.get("tool_round_counts") or state.get("tool_call_counts") or {}
         rounds_used = int(rounds.get("social", 0) or 0)
         total_rounds_used = int(state.get("tool_call_total", sum(int(v or 0) for v in rounds.values())) or 0)
-        tools = [
+        fallback_tools = [
             get_news,
             get_company_news_window,
             get_news_sentiment,
         ]
-        if enable_bundle_tools:
-            tools = [get_sentiment_data_bundle, *tools]
+        tools = select_bundle_first_tools(
+            get_sentiment_data_bundle,
+            fallback_tools,
+            enable_bundle_tools=enable_bundle_tools,
+            rounds_used=rounds_used,
+        )
 
         system_message = (
             f"You are a sentiment/attention analyst supporting a {holding_text} swing trade. Use the available data sources (news + any sentiment fields returned by the vendor) as a proxy for crowd attention and narrative momentum."
@@ -53,6 +61,7 @@ def create_social_media_analyst(llm):
             "\n- Sentiment: direction over time; identify any inflection points and what triggered them."
             "\n- Reflexivity risk: how sentiment could drive short-term flow (breakouts, squeezes, fades)."
             f"\n- Watch items: 3 concrete headlines/posts-types that would likely move the stock over {window_text}."
+            "\n- Do not output `FINAL TRANSACTION PROPOSAL`; provide domain bias and evidence only. The trader/risk judge owns executable BUY/HOLD/SELL decisions."
             "\n\nEnd with a compact Markdown table: theme, sentiment (bull/bear), confidence, catalyst/watch item, and likely price reaction."
         )
 
@@ -71,8 +80,6 @@ def create_social_media_analyst(llm):
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
                     "For your reference, the current date is {current_date}. The current company we want to analyze is {ticker}",
                 ),
@@ -106,6 +113,7 @@ def create_social_media_analyst(llm):
         return {
             "messages": [result],
             "sentiment_report": report,
+            "sentiment_evidence": build_report_evidence_summary("sentiment", report) if report else "",
             "force_no_tools_for": "",
             **tooling_state,
         }

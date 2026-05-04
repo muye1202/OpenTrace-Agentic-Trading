@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict
 
@@ -42,6 +44,124 @@ async def _run_tool(tool_obj: Any, payload: Dict[str, Any]) -> str:
         return str(await tool_obj.ainvoke(payload))
     except Exception as e:
         return f"ToolError[{getattr(tool_obj, 'name', 'unknown')}]: {type(e).__name__}: {e}"
+
+
+def select_bundle_first_tools(
+    bundle_tool: Any,
+    fallback_tools: list[Any],
+    *,
+    enable_bundle_tools: bool,
+    rounds_used: int,
+) -> list[Any]:
+    """Expose only the bundle on the first analyst round, then fall back if needed."""
+    if not enable_bundle_tools:
+        return list(fallback_tools)
+    if int(rounds_used or 0) <= 0:
+        return [bundle_tool]
+    return list(fallback_tools)
+
+
+def _score_bundle_line(line: str) -> int:
+    lower = line.lower()
+    score = 0
+    if re.search(r"\$?\d+(?:\.\d+)?%?", line):
+        score += 2
+    for term in (
+        "last close",
+        "returns",
+        "atr",
+        "volume",
+        "support",
+        "resistance",
+        "trigger",
+        "risk",
+        "sentiment",
+        "earnings",
+        "revenue",
+        "margin",
+        "cash",
+        "debt",
+        "insider",
+        "short",
+        "vwap",
+        "options",
+        "valuation",
+        "price",
+    ):
+        if term in lower:
+            score += 1
+    if line.lstrip().startswith(("-", "*", "|")):
+        score += 1
+    return score
+
+
+def _missing_summary(section: str, value: str) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return "empty output"
+    lower = text.lower()
+    if lower.startswith("toolerror"):
+        return text[:240]
+    for marker in ("no ", "not available", "failed", "error", "missing", "n/a", "nan"):
+        if marker in lower:
+            return text.splitlines()[0][:240]
+    return None
+
+
+def format_evidence_bundle(
+    bundle_name: str,
+    symbol: str,
+    curr_date: str,
+    results: Dict[str, Any],
+    *,
+    max_chars: int = 6000,
+) -> str:
+    """Return a compact JSON evidence packet instead of raw concatenated tool output."""
+    facts: list[dict[str, str]] = []
+    missing_data: list[dict[str, str]] = []
+    source_quality: list[dict[str, Any]] = []
+
+    for section, raw in results.items():
+        text = str(raw or "")
+        if missing := _missing_summary(section, text):
+            missing_data.append({"section": section, "issue": missing})
+        source_quality.append({"section": section, "chars": len(text), "status": "missing" if missing else "ok"})
+
+        lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
+        scored = [
+            (_score_bundle_line(line), idx, line)
+            for idx, line in enumerate(lines)
+            if line and not line.startswith("##")
+        ]
+        selected = [
+            line
+            for score, _, line in sorted(scored, key=lambda item: (-item[0], item[1]))
+            if score > 0
+        ][:4]
+        for line in selected:
+            facts.append({"section": section, "text": line[:320]})
+
+    packet: dict[str, Any] = {
+        "bundle": bundle_name,
+        "symbol": symbol,
+        "date": curr_date,
+        "facts": facts[:28],
+        "missing_data": missing_data[:12],
+        "source_quality": source_quality,
+        "instruction": "Use this compact evidence packet for analysis; do not treat omitted raw rows as absent data.",
+    }
+
+    text = json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
+    if len(text) <= max_chars:
+        return text
+
+    packet["facts"] = packet["facts"][: max(6, len(packet["facts"]) // 2)]
+    packet["source_quality"] = packet["source_quality"][:12]
+    text = json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
+    while len(text) > max_chars and packet["facts"]:
+        packet["facts"].pop()
+        text = json.dumps(packet, ensure_ascii=False, separators=(",", ":"))
+    return text[:max_chars]
 
 
 def _parse_indicator_csv(indicators_csv: str) -> list[str]:
@@ -135,15 +255,7 @@ async def get_market_data_bundle(
         )
 
     results = {key: await task for key, task in tasks.items()}
-    lines = [
-        f"## Market Data Bundle: {symbol} ({curr_date})",
-        "Use sections below directly; each subsection is a raw sub-tool result.",
-    ]
-    for key, value in results.items():
-        lines.append("")
-        lines.append(f"### {key}")
-        lines.append(value)
-    return "\n".join(lines)
+    return format_evidence_bundle("Market Data Bundle", symbol, curr_date, results)
 
 
 @tool
@@ -180,12 +292,7 @@ async def get_fundamentals_data_bundle(
         ),
     }
     results = {key: await task for key, task in tasks.items()}
-    lines = [f"## Fundamentals Data Bundle: {ticker} ({curr_date})"]
-    for key, value in results.items():
-        lines.append("")
-        lines.append(f"### {key}")
-        lines.append(value)
-    return "\n".join(lines)
+    return format_evidence_bundle("Fundamentals Data Bundle", ticker, curr_date, results)
 
 
 @tool
@@ -225,12 +332,7 @@ async def get_news_data_bundle(
         ),
     }
     results = {key: await task for key, task in tasks.items()}
-    lines = [f"## News Data Bundle: {ticker} ({curr_date})"]
-    for key, value in results.items():
-        lines.append("")
-        lines.append(f"### {key}")
-        lines.append(value)
-    return "\n".join(lines)
+    return format_evidence_bundle("News Data Bundle", ticker, curr_date, results)
 
 
 @tool
@@ -258,9 +360,4 @@ async def get_sentiment_data_bundle(
         ),
     }
     results = {key: await task for key, task in tasks.items()}
-    lines = [f"## Sentiment Data Bundle: {ticker} ({curr_date})"]
-    for key, value in results.items():
-        lines.append("")
-        lines.append(f"### {key}")
-        lines.append(value)
-    return "\n".join(lines)
+    return format_evidence_bundle("Sentiment Data Bundle", ticker, curr_date, results)

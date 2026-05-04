@@ -6,6 +6,7 @@ import logging
 from tradingagents.agents.utils.agent_runtime.context_budget import (
     cap_section,
     cap_sections_with_soft_token_cap,
+    format_analyst_evidence_context,
     get_budget_settings,
     prompt_diagnostics,
 )
@@ -43,32 +44,7 @@ def create_bull_researcher(llm, memory):
                 current_response,
                 settings["section_max_chars_response"],
             ),
-            "reports": "\n\n".join(
-                [
-                    "Market research report:\n"
-                    + cap_section(
-                        "market_report",
-                        market_research_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Social media sentiment report:\n"
-                    + cap_section(
-                        "sentiment_report",
-                        sentiment_report,
-                        settings["section_max_chars_report"],
-                    ),
-                    "Latest world affairs news:\n"
-                    + cap_section(
-                        "news_report", news_report, settings["section_max_chars_report"]
-                    ),
-                    "Company fundamentals report:\n"
-                    + cap_section(
-                        "fundamentals_report",
-                        fundamentals_report,
-                        settings["section_max_chars_report"],
-                    ),
-                ]
-            ),
+            "reports": format_analyst_evidence_context(state),
             "memories": cap_section(
                 "memories", past_memory_str, settings["section_max_chars_memory"]
             ),
