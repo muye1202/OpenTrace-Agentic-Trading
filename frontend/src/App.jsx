@@ -39,9 +39,24 @@ const getHorizonMeta = (value) => (
 );
 
 const MODES = [
-  { id: 'analysis', label: 'Analysis', description: 'Run the agent pipeline' },
-  { id: 'reports', label: 'Reports', description: 'Read generated findings' },
-  { id: 'execution', label: 'Execution', description: 'Paper-trade controls' },
+  { 
+    id: 'analysis', 
+    label: 'Analysis', 
+    description: 'Run the agent pipeline',
+    icon: <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+  },
+  { 
+    id: 'reports', 
+    label: 'Reports', 
+    description: 'Read generated findings',
+    icon: <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+  },
+  { 
+    id: 'execution', 
+    label: 'Execution', 
+    description: 'Paper-trade controls',
+    icon: <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+  },
 ];
 
 const SHALLOW_MODELS = [
@@ -992,15 +1007,16 @@ function App() {
         </button>
 
         {hasConversation && (
-          <nav className="mode-list" aria-label="Functionality">
+          <nav className="segmented-modes" aria-label="Functionality">
             {MODES.map((mode) => (
               <button
                 key={mode.id}
-                className={activeMode === mode.id ? 'mode-item active' : 'mode-item'}
+                className={activeMode === mode.id ? 'segmented-item active' : 'segmented-item'}
                 onClick={() => setActiveMode(mode.id)}
+                title={mode.description}
               >
+                {mode.icon}
                 <span>{mode.label}</span>
-                <small>{mode.description}</small>
               </button>
             ))}
           </nav>
