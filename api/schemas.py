@@ -11,7 +11,7 @@ class AnalysisRequest(BaseModel):
     ticker: str = Field(..., description="The stock ticker symbol (e.g. AAPL)")
     analysis_date: str = Field(..., description="Date of analysis in YYYY-MM-DD format")
     analysts: List[str] = Field(
-        default=["market", "social", "news", "fundamentals"],
+        default=["catalyst", "market", "social", "news", "fundamentals"],
         description="List of analysts to include"
     )
     research_depth: int = Field(default=1, description="Depth of research (debate rounds)")

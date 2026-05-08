@@ -34,6 +34,8 @@ def create_news_analyst(llm):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
         portfolio_context = state.get("portfolio_context", "")
+        catalyst_context = state.get("catalyst_report", "")
+        catalyst_structured = state.get("catalyst_event_report_structured", {})
         spec = get_time_horizon_spec(state.get("time_horizon"))
         holding_text = spec.label
         window_text = f"the next {spec.weeks_range[0]}–{spec.weeks_range[1]} weeks"
@@ -103,6 +105,15 @@ def create_news_analyst(llm):
                 "\n\n---\nCURRENT PORTFOLIO CONTEXT (live brokerage snapshot):\n"
                 + str(portfolio_context)
                 + "\n\n**CRITICAL** Execution note: The system can place MARKET (execute now) or conditional orders (LIMIT/STOP/STOP_LIMIT/TRAILING_STOP). Your report MUST provide concrete numeric levels for: (1) entry/trigger, (2) stop-loss, (3) take-profit, and (4) holding horizon or time-stop for hold management. This applies to both active BUY/SELL setups and HOLD/watch scenarios. If confidence is low, still provide bounded watch levels and explicit invalidation logic instead of omitting levels.\n---"
+            )
+
+        if catalyst_context or catalyst_structured:
+            system_message += (
+                "\n\n---\nCATALYST / EVENT-RISK CONTEXT:\n"
+                + (str(catalyst_structured) if catalyst_structured else "")
+                + "\n"
+                + str(catalyst_context)
+                + "\nUse recent_material_events, thesis_supporting_events, thesis_breaking_events, and evidence_table to avoid over-weighting routine headlines. Focus news analysis on narrative deltas not already explained by the catalyst report.\n---"
             )
 
         prompt = ChatPromptTemplate.from_messages(

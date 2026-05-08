@@ -86,6 +86,16 @@ class ConditionalLogic:
             force_finalize_node="Force Finalize News",
         )
 
+    def should_continue_catalyst(self, state: AgentState):
+        """Determine if catalyst/event-risk analysis should continue."""
+        return self._tool_route(
+            state,
+            analyst_key="catalyst",
+            tools_node="tools_catalyst",
+            clear_node="Msg Clear Catalyst",
+            force_finalize_node="Force Finalize Catalyst",
+        )
+
     def should_continue_fundamentals(self, state: AgentState):
         """Determine if fundamentals analysis should continue."""
         return self._tool_route(

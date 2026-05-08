@@ -8,7 +8,7 @@ from tradingagents.agents.analysts.workbench import normalize_ledger
 from tradingagents.agents.utils.agent_runtime.context_budget import cap_section, get_budget_settings
 
 
-EvidenceDomain = Literal["market", "sentiment", "news", "fundamentals"]
+EvidenceDomain = Literal["market", "sentiment", "news", "fundamentals", "catalyst"]
 EvidenceAudience = Literal["bull", "bear", "research_manager", "trader", "risk"]
 
 
@@ -75,7 +75,7 @@ class DecisionTrace(TypedDict, total=False):
     audit_issues: List[EvidenceAuditIssue]
 
 
-DOMAINS = ["market", "sentiment", "news", "fundamentals"]
+DOMAINS = ["catalyst", "market", "sentiment", "news", "fundamentals"]
 LOW_QUALITY = {"stale", "low_quality", "contradictory", "missing"}
 BULLISH_TERMS = {
     "above",

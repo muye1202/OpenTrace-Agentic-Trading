@@ -16,6 +16,8 @@ def create_trader(llm, memory):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
+        catalyst_report = state.get("catalyst_report", "")
+        catalyst_structured = state.get("catalyst_event_report_structured", {})
         portfolio_context = state.get("portfolio_context", "")
         market_session_context = state.get("market_session_context", "")
         market_snapshot = state.get("market_snapshot", {}) or build_market_snapshot(
@@ -32,7 +34,7 @@ def create_trader(llm, memory):
             f"~{spec.trading_days_range[0]}–{spec.trading_days_range[1]} trading days"
         )
 
-        curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
+        curr_situation = f"{catalyst_report}\n\n{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
 
         past_memory_str = ""
@@ -64,6 +66,9 @@ Proposed Investment Plan: {investment_plan}
 
 Evidence graph projection for execution planning:
 {evidence_projection}
+Catalyst/event-risk context:
+{catalyst_structured}
+{catalyst_report}
 {portfolio_block}
 Leverage these insights to make an informed and strategic decision.""",
         }
@@ -113,6 +118,8 @@ Leverage these insights to make an informed and strategic decision.""",
   ---
 
   IMPORTANT RULES:
+  - **CRITICAL**: If catalyst/event-risk context recommends `freeze_new_buys`, `risk_judge_review`, `reduce_position`, or `exit_review`, reflect that in execution timing, sizing, and WAIT_FOR_TRIGGER vs ACT_NOW choice.
+  - **CRITICAL**: Treat HIGH/CRITICAL event risk as a reason to avoid chasing entries before the event unless the broader analysis strongly justifies immediate action.
   - **CRITICAL**: You must choose exactly one `EXECUTION_INTENT`:
     - `ACT_NOW` when this setup should be executed immediately.
     - `WAIT_FOR_TRIGGER` when this setup should be monitored and activated later by explicit conditions.
