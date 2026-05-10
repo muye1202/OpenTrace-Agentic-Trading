@@ -42,7 +42,7 @@ def create_fundamentals_analyst(llm):
         window_text = f"the next {spec.weeks_range[0]}–{spec.weeks_range[1]} weeks"
 
         enable_bundle_tools = bool(get_config().get("enable_bundle_tools", True))
-        tool_round_cap = int(get_config().get("analyst_tool_round_cap", 2) or 2)
+        tool_round_cap = int(get_config().get("analyst_tool_round_cap", 4) or 0)
         global_tool_round_cap = int(get_config().get("max_tool_calls_total", 50) or 50)
         rounds = state.get("tool_round_counts") or state.get("tool_call_counts") or {}
         rounds_used = int(rounds.get("fundamentals", 0) or 0)
@@ -142,8 +142,8 @@ def create_fundamentals_analyst(llm):
 
         force_no_tools = (
             state.get("force_no_tools_for") == "fundamentals"
-            or rounds_used >= tool_round_cap
-            or total_rounds_used >= global_tool_round_cap
+            or (tool_round_cap > 0 and rounds_used >= tool_round_cap)
+            or (global_tool_round_cap > 0 and total_rounds_used >= global_tool_round_cap)
         )
         chain = prompt | (
             llm if force_no_tools or not tools else bind_tools_parallel_safe(llm, tools)

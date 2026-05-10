@@ -683,7 +683,7 @@ class TradingAgentsGraph:
             max_risk_discuss_rounds=self.config.get("max_risk_discuss_rounds", 1),
             max_tool_calls_per_analyst=self.config.get(
                 "analyst_tool_round_cap",
-                self.config.get("max_tool_calls_per_analyst", 2),
+                self.config.get("max_tool_calls_per_analyst", 4),
             ),
             max_tool_calls_total=self.config.get("max_tool_calls_total", 50),
         )

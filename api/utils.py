@@ -24,6 +24,7 @@ REPORT_PAYLOAD_KEYS = [
     "fundamentals_ledger",
     "catalyst_event_bundle",
     "catalyst_event_report_structured",
+    "catalyst_parse_telemetry",
     "catalyst_evidence",
     "evidence_source_facts",
     "evidence_graph",
@@ -191,6 +192,8 @@ async def stream_analysis_ws(req, websocket: WebSocket) -> Dict[str, Any]:
             reports["catalyst_event_bundle"] = chunk["catalyst_event_bundle"]
         if chunk.get("catalyst_event_report_structured"):
             reports["catalyst_event_report_structured"] = chunk["catalyst_event_report_structured"]
+        if chunk.get("catalyst_parse_telemetry"):
+            reports["catalyst_parse_telemetry"] = chunk["catalyst_parse_telemetry"]
         if chunk.get("fundamentals_report"):
             reports["fundamentals_report"] = chunk["fundamentals_report"]
 

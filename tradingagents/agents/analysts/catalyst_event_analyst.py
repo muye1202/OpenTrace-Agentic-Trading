@@ -22,22 +22,87 @@ from tradingagents.dataflows.config import get_config
 from tradingagents.schemas.catalyst_events import CatalystEventBundle, CatalystEventReport
 
 
-def _extract_json_block(text: Any, start_tag: str, end_tag: str) -> dict[str, Any] | None:
-    raw = str(text or "")
+def _json_from_brace_balanced_text(raw: str) -> dict[str, Any] | None:
+    start = raw.find("{")
+    while start >= 0:
+        depth = 0
+        in_string = False
+        escape = False
+        for idx in range(start, len(raw)):
+            char = raw[idx]
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = raw[start : idx + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                    except Exception:
+                        break
+                    if isinstance(parsed, dict):
+                        return parsed
+                    break
+        start = raw.find("{", start + 1)
+    return None
+
+
+def _tool_call_args_from_content(content: Any) -> dict[str, Any] | None:
+    tool_calls = getattr(content, "tool_calls", None)
+    if not tool_calls and isinstance(content, dict):
+        tool_calls = content.get("tool_calls")
+    for call in tool_calls or []:
+        args = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
+        if isinstance(args, dict):
+            return args
+        if isinstance(args, str):
+            try:
+                parsed = json.loads(args)
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    return None
+
+
+def _extract_json_block(text: Any, start_tag: str, end_tag: str) -> tuple[dict[str, Any] | None, str, str]:
+    raw = str(getattr(text, "content", text) or "")
     pattern = rf"{re.escape(start_tag)}\s*(\{{.*?\}})\s*{re.escape(end_tag)}"
     match = re.search(pattern, raw, flags=re.DOTALL | re.IGNORECASE)
-    candidates = [match.group(1)] if match else []
+    candidates: list[tuple[str, str]] = []
+    if match:
+        candidates.append(("tagged_json", match.group(1)))
+    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidates.append(("fenced_json", fenced.group(1)))
     stripped = raw.strip()
     if stripped.startswith("{") and stripped.endswith("}"):
-        candidates.append(stripped)
-    for candidate in candidates:
+        candidates.append(("whole_message_json", stripped))
+    for stage, candidate in candidates:
         try:
             parsed = json.loads(candidate)
-        except Exception:
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
             continue
         if isinstance(parsed, dict):
-            return parsed
-    return None
+            return parsed, stage, ""
+    parsed = _json_from_brace_balanced_text(raw)
+    if parsed:
+        return parsed, "brace_balanced_json", ""
+    tool_args = _tool_call_args_from_content(text)
+    if tool_args:
+        return tool_args, "tool_call_args", ""
+    return None, "json_not_found", locals().get("last_error", "")
 
 
 def _bundle_from_any(value: Any, ticker: str = "", as_of: str = "") -> dict[str, Any]:
@@ -71,11 +136,13 @@ def _latest_bundle_from_messages(messages: list[Any], ticker: str, as_of: str) -
     return {}
 
 
-def _fallback_report(bundle: dict[str, Any], reason: str = "") -> CatalystEventReport:
+def _fallback_report(bundle: dict[str, Any], reason: str = "", *, parse_failed: bool = False) -> CatalystEventReport:
     normalized = CatalystEventBundle.from_dict(bundle).to_dict()
     recent = normalized.get("recent_events", []) or []
     upcoming = normalized.get("upcoming_events", []) or []
     filings = normalized.get("recent_filings", []) or []
+    quality = normalized.get("bundle_quality") or {}
+    quarantined = normalized.get("quarantined_events", []) or []
     evidence = []
     for event in [*recent, *upcoming][:5]:
         evidence.append(
@@ -87,6 +154,7 @@ def _fallback_report(bundle: dict[str, Any], reason: str = "") -> CatalystEventR
                 "thesis_impact": "unknown",
                 "confidence": event.get("confidence", 0.5),
                 "url": event.get("url"),
+                "source_event_id": event.get("event_id"),
             }
         )
     for filing in filings[:3]:
@@ -99,6 +167,7 @@ def _fallback_report(bundle: dict[str, Any], reason: str = "") -> CatalystEventR
                 "thesis_impact": "unknown",
                 "confidence": filing.get("materiality_score", 0.5),
                 "url": filing.get("primary_document_url"),
+                "source_event_id": filing.get("accession_number"),
             }
         )
 
@@ -110,7 +179,53 @@ def _fallback_report(bundle: dict[str, Any], reason: str = "") -> CatalystEventR
             max_materiality = max(max_materiality, float(score))
         except Exception:
             pass
-    rating = "HIGH" if max_materiality >= 0.75 else "MEDIUM" if max_materiality >= 0.45 else "LOW"
+    accepted_material_event_exists = any(
+        float(event.get("materiality_score") or 0.0) >= 0.65 for event in recent + upcoming
+    ) or any(float(filing.get("materiality_score") or 0.0) >= 0.65 for filing in filings)
+    max_contamination = float(quality.get("max_source_contamination") or 0.0)
+    accepted_count = int(quality.get("accepted_event_count") or len(recent) + len(upcoming))
+    missing_sources = [
+        name
+        for name, item in (normalized.get("source_quality") or {}).items()
+        if isinstance(item, dict) and item.get("status") == "missing"
+    ]
+    insufficient_data = accepted_count == 0 or len(missing_sources) >= 3 or quality.get("quality_gate") in {"failed", "sparse"}
+    fallback_mode = "valid_low_materiality"
+    rating = "LOW"
+    action = "ignore_low_materiality"
+    unresolved = []
+    data_quality_notes = []
+
+    if max_contamination >= 0.50 or quality.get("quality_gate") == "contaminated":
+        fallback_mode = "source_contaminated"
+        rating = "MEDIUM"
+        action = "risk_judge_review"
+        unresolved.append("Catalyst source contamination detected; verify target-company relevance before trading.")
+        data_quality_notes.append(f"max_source_contamination={max_contamination:.2f}")
+    elif parse_failed and accepted_material_event_exists:
+        fallback_mode = "material_event_detected"
+        rating = "HIGH"
+        action = "risk_judge_review"
+        unresolved.append("Material accepted catalyst detected, but analyst output could not be parsed.")
+    elif insufficient_data:
+        fallback_mode = "insufficient_data"
+        rating = "MEDIUM"
+        action = "rerun_full_analysis"
+        unresolved.append("Insufficient accepted catalyst data; rerun or verify source availability.")
+    elif parse_failed:
+        fallback_mode = "parse_failed_clean_bundle"
+        rating = "MEDIUM"
+        action = "rerun_full_analysis"
+        unresolved.append("Catalyst analyst output was malformed despite usable bundle quality.")
+    else:
+        rating = "HIGH" if max_materiality >= 0.75 else "MEDIUM" if max_materiality >= 0.45 else "LOW"
+        action = "continue_analysis" if rating != "LOW" else "ignore_low_materiality"
+    for event in quarantined[:3]:
+        title = event.get("title") or event.get("summary")
+        if title:
+            unresolved.append(f"Quarantined event requires target-relevance verification: {title}")
+    if not unresolved:
+        unresolved.append("Review event materiality manually if key source data is missing.")
     rationale = reason or "Catalyst report was built from available structured events."
     return CatalystEventReport.from_dict(
         {
@@ -126,27 +241,51 @@ def _fallback_report(bundle: dict[str, Any], reason: str = "") -> CatalystEventR
             ],
             "thesis_supporting_events": [],
             "thesis_breaking_events": [],
-            "unresolved_questions": ["Review event materiality manually if key source data is missing."],
-            "recommended_action": "continue_analysis",
+            "unresolved_questions": unresolved,
+            "recommended_action": action,
             "action_rationale": rationale,
             "risk_controls": ["Size conservatively around unresolved catalysts."],
             "evidence_table": evidence,
+            "fallback_mode": fallback_mode,
+            "data_quality_notes": data_quality_notes,
         }
     )
 
 
-def parse_catalyst_report(content: Any, bundle: Any) -> dict[str, Any]:
+def parse_catalyst_report(content: Any, bundle: Any, *, include_telemetry: bool = False) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     bundle_dict = _bundle_from_any(bundle)
-    parsed = _extract_json_block(
+    raw_content = str(getattr(content, "content", content) or "")
+    telemetry = {
+        "parse_ok": False,
+        "failure_stage": "",
+        "exception": "",
+        "output_preview": raw_content[:800],
+        "model_name": "",
+        "used_structured_output": False,
+        "repair_attempted": False,
+        "repair_succeeded": False,
+        "parse_stage": "",
+    }
+    parsed, stage, exception = _extract_json_block(
         content,
         "BEGIN_CATALYST_EVENT_REPORT_JSON",
         "END_CATALYST_EVENT_REPORT_JSON",
     )
     if not parsed:
-        return _fallback_report(bundle_dict, "Malformed catalyst analyst output; using validated fallback.").to_dict()
+        telemetry["failure_stage"] = stage
+        telemetry["exception"] = exception
+        report = _fallback_report(
+            bundle_dict,
+            "Malformed catalyst analyst output; using validated fallback.",
+            parse_failed=True,
+        ).to_dict()
+        return (report, telemetry) if include_telemetry else report
     parsed.setdefault("ticker", bundle_dict.get("ticker", ""))
     parsed.setdefault("as_of", bundle_dict.get("as_of", ""))
-    return CatalystEventReport.from_dict(parsed).to_dict()
+    report = CatalystEventReport.from_dict(parsed).to_dict()
+    telemetry["parse_ok"] = True
+    telemetry["parse_stage"] = stage
+    return (report, telemetry) if include_telemetry else report
 
 
 def format_catalyst_report_markdown(report: dict[str, Any]) -> str:
@@ -192,12 +331,18 @@ def format_catalyst_report_markdown(report: dict[str, Any]) -> str:
 def _ledger_from_report(report: dict[str, Any]) -> dict[str, Any]:
     observations = []
     for idx, item in enumerate(report.get("evidence_table", [])[:8], 1):
+        source_ids = []
+        if item.get("source_event_id"):
+            source_ids.append(str(item.get("source_event_id")))
+        for source_id in item.get("source_fact_ids", []) or []:
+            if str(source_id) and str(source_id) not in source_ids:
+                source_ids.append(str(source_id))
         observations.append(
             {
                 "id": f"obs_catalyst_{idx:03d}",
                 "domain": "catalyst",
                 "claim": item.get("claim", ""),
-                "source_fact_ids": [],
+                "source_fact_ids": source_ids,
                 "surprise_score": item.get("confidence", 0.5),
                 "why_it_matters": item.get("thesis_impact", "Event may affect thesis timing or risk."),
                 "status": "explained",
@@ -243,6 +388,7 @@ def create_catalyst_event_analyst(llm):
                 "catalyst_report": state["catalyst_report"],
                 "catalyst_event_bundle": state.get("catalyst_event_bundle", {}),
                 "catalyst_event_report_structured": state.get("catalyst_event_report_structured", {}),
+                "catalyst_parse_telemetry": state.get("catalyst_parse_telemetry", {}),
             }
 
         current_date = state["trade_date"]
@@ -253,15 +399,15 @@ def create_catalyst_event_analyst(llm):
             bundle = latest_tool_bundle
 
         config = get_config()
-        tool_round_cap = int(config.get("analyst_tool_round_cap", 2) or 2)
+        tool_round_cap = int(config.get("analyst_tool_round_cap", 4) or 0)
         global_tool_round_cap = int(config.get("max_tool_calls_total", 50) or 50)
         rounds = state.get("tool_round_counts") or state.get("tool_call_counts") or {}
         rounds_used = int(rounds.get("catalyst", 0) or 0)
         total_rounds_used = int(state.get("tool_call_total", sum(int(v or 0) for v in rounds.values())) or 0)
         force_no_tools = (
             state.get("force_no_tools_for") == "catalyst"
-            or rounds_used >= tool_round_cap
-            or total_rounds_used >= global_tool_round_cap
+            or (tool_round_cap > 0 and rounds_used >= tool_round_cap)
+            or (global_tool_round_cap > 0 and total_rounds_used >= global_tool_round_cap)
             or bool(latest_tool_bundle)
         )
         tools = [] if force_no_tools or state.get("catalyst_event_bundle") else [get_catalyst_event_bundle]
@@ -326,11 +472,16 @@ Use HIGH/CRITICAL only for discrete material events, near-term timing risk, like
 
         report = ""
         structured_report = {}
+        parse_telemetry = {}
         ledger = None
         evidence = ""
         workbench_metrics_update = {}
         if tool_calls_count == 0:
-            structured_report = parse_catalyst_report(result.content, bundle)
+            structured_report, parse_telemetry = parse_catalyst_report(
+                result,
+                bundle,
+                include_telemetry=True,
+            )
             report = format_catalyst_report_markdown(structured_report)
             ledger = _ledger_from_report(structured_report)
             evidence = build_ledger_evidence_summary("catalyst", ledger) or build_report_evidence_summary(
@@ -347,6 +498,7 @@ Use HIGH/CRITICAL only for discrete material events, near-term timing risk, like
             "catalyst_report": report,
             "catalyst_event_bundle": bundle,
             "catalyst_event_report_structured": structured_report,
+            "catalyst_parse_telemetry": parse_telemetry,
             "catalyst_evidence": evidence,
             "force_no_tools_for": "",
             **tooling_state,

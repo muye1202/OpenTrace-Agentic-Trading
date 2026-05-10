@@ -73,6 +73,7 @@ class Propagator:
             "catalyst_ledger": normalize_ledger("catalyst"),
             "catalyst_event_bundle": {},
             "catalyst_event_report_structured": {},
+            "catalyst_parse_telemetry": {},
             "evidence_source_facts": [],
             "evidence_graph": build_evidence_graph({}),
             "evidence_graph_audit": [],

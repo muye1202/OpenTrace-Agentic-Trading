@@ -10,7 +10,7 @@ class ConditionalLogic:
         self,
         max_debate_rounds=1,
         max_risk_discuss_rounds=1,
-        max_tool_calls_per_analyst=2,
+        max_tool_calls_per_analyst=4,
         max_tool_calls_total=50,
     ):
         """Initialize with configuration parameters."""
@@ -34,9 +34,9 @@ class ConditionalLogic:
         per = int(rounds.get(analyst_key, 0) or 0)
         total = int(state.get("tool_call_total", sum(int(v or 0) for v in rounds.values())) or 0)
 
-        if total > self.max_tool_calls_total:
+        if self.max_tool_calls_total > 0 and total >= self.max_tool_calls_total:
             return False
-        if per > self.max_tool_calls_per_analyst:
+        if self.max_tool_calls_per_analyst > 0 and per >= self.max_tool_calls_per_analyst:
             return False
         return True
 

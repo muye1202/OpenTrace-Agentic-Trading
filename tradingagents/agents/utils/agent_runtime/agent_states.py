@@ -79,6 +79,7 @@ class AgentState(_MessagesState):
     catalyst_ledger: Annotated[dict, "Structured Analyst Workbench ledger from the Catalyst/Event-Risk Analyst"]
     catalyst_event_bundle: Annotated[dict, "Structured CatalystEventBundle input to the Catalyst/Event-Risk Analyst"]
     catalyst_event_report_structured: Annotated[dict, "Validated CatalystEventReport emitted by the Catalyst/Event-Risk Analyst"]
+    catalyst_parse_telemetry: Annotated[dict, "Catalyst report parser and fallback telemetry"]
     evidence_source_facts: Annotated[list, "Canonical vendor facts captured from compact bundle tool outputs"]
     evidence_graph: Annotated[dict, "Shared evidence graph built from vendor facts plus analyst inferences"]
     evidence_graph_audit: Annotated[list, "Deterministic audit issues from evidence graph construction"]

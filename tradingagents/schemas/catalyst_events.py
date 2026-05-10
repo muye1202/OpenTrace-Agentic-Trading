@@ -76,6 +76,11 @@ class EventRecord:
     novelty_score: float = 0.0
     sentiment_score: float | None = None
     confidence: float = 0.0
+    relevance_score: float = 0.0
+    matched_aliases: list[str] = field(default_factory=list)
+    mentioned_tickers: list[str] = field(default_factory=list)
+    contamination_flags: list[str] = field(default_factory=list)
+    quarantine_reason: str | None = None
 
     @classmethod
     def from_dict(cls, data: Any) -> "EventRecord":
@@ -94,6 +99,11 @@ class EventRecord:
             novelty_score=_clamp01(d.get("novelty_score")),
             sentiment_score=_float_or_none(d.get("sentiment_score")),
             confidence=_clamp01(d.get("confidence")),
+            relevance_score=_clamp01(d.get("relevance_score")),
+            matched_aliases=_str_list(d.get("matched_aliases")),
+            mentioned_tickers=_str_list(d.get("mentioned_tickers")),
+            contamination_flags=_str_list(d.get("contamination_flags")),
+            quarantine_reason=_str_or_none(d.get("quarantine_reason")),
         )
 
 
@@ -231,8 +241,11 @@ class PriorThesis:
 class CatalystEventBundle:
     ticker: str
     company_name: str | None = None
+    aliases: list[str] = field(default_factory=list)
     as_of: str = ""
     recent_events: list[EventRecord] = field(default_factory=list)
+    quarantined_events: list[EventRecord] = field(default_factory=list)
+    dropped_event_count: int = 0
     upcoming_events: list[EventRecord] = field(default_factory=list)
     recent_filings: list[FilingRecord] = field(default_factory=list)
     macro_events: list[MacroEventRecord] = field(default_factory=list)
@@ -240,6 +253,7 @@ class CatalystEventBundle:
     position_context: PositionContext | None = None
     prior_thesis: PriorThesis | None = None
     source_quality: dict[str, Any] = field(default_factory=dict)
+    bundle_quality: dict[str, Any] = field(default_factory=dict)
     data_freshness: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -250,8 +264,11 @@ class CatalystEventBundle:
         return cls(
             ticker=str(d.get("ticker") or d.get("symbol") or ""),
             company_name=_str_or_none(d.get("company_name")),
+            aliases=_str_list(d.get("aliases")),
             as_of=str(d.get("as_of") or d.get("date") or ""),
             recent_events=[EventRecord.from_dict(item) for item in _as_list(d.get("recent_events"))],
+            quarantined_events=[EventRecord.from_dict(item) for item in _as_list(d.get("quarantined_events"))],
+            dropped_event_count=int(_float_default(d.get("dropped_event_count"), 0.0)),
             upcoming_events=[EventRecord.from_dict(item) for item in _as_list(d.get("upcoming_events"))],
             recent_filings=[FilingRecord.from_dict(item) for item in _as_list(d.get("recent_filings"))],
             macro_events=[MacroEventRecord.from_dict(item) for item in _as_list(d.get("macro_events"))],
@@ -259,6 +276,7 @@ class CatalystEventBundle:
             position_context=PositionContext.from_dict(position) if isinstance(position, dict) else None,
             prior_thesis=PriorThesis.from_dict(thesis) if isinstance(thesis, dict) else None,
             source_quality=_as_dict(d.get("source_quality")),
+            bundle_quality=_as_dict(d.get("bundle_quality")),
             data_freshness=_as_dict(d.get("data_freshness")),
         )
 
@@ -282,6 +300,7 @@ class EvidenceItem:
     thesis_impact: str = ""
     confidence: float = 0.0
     url: str | None = None
+    source_event_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: Any) -> "EvidenceItem":
@@ -294,6 +313,7 @@ class EvidenceItem:
             thesis_impact=str(d.get("thesis_impact") or ""),
             confidence=_clamp01(d.get("confidence")),
             url=_str_or_none(d.get("url")),
+            source_event_id=_str_or_none(d.get("source_event_id") or d.get("event_id")),
         )
 
 
@@ -314,6 +334,8 @@ class CatalystEventReport:
     action_rationale: str = ""
     risk_controls: list[str] = field(default_factory=list)
     evidence_table: list[EvidenceItem] = field(default_factory=list)
+    fallback_mode: str = ""
+    data_quality_notes: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Any) -> "CatalystEventReport":
@@ -340,6 +362,8 @@ class CatalystEventReport:
             action_rationale=str(d.get("action_rationale") or ""),
             risk_controls=_str_list(d.get("risk_controls")),
             evidence_table=[EvidenceItem.from_dict(item) for item in _as_list(d.get("evidence_table"))],
+            fallback_mode=str(d.get("fallback_mode") or ""),
+            data_quality_notes=_str_list(d.get("data_quality_notes")),
         )
 
     @classmethod
