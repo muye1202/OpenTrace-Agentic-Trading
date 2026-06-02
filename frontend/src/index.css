@@ -1,40 +1,40 @@
 :root {
-  /* Signal Lab - a precise, minimal research-console system */
+  /* Warm research-console system */
   --font-display: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-body: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "IBM Plex Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
   font-family: var(--font-body);
-  color: #eef7ff;
-  background: #080c10;
+  color: #f5f4ee;
+  background: #262624;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 
   /* Dark */
-  --bg: #080c10;
-  --bg-soft: #0d141b;
-  --surface: rgba(15, 22, 30, 0.76);
-  --surface-strong: #121b24;
-  --surface-muted: rgba(122, 205, 255, 0.055);
-  --border: rgba(155, 205, 235, 0.12);
-  --border-strong: rgba(155, 205, 235, 0.22);
-  --text: #eef7ff;
-  --muted: #9fb1bf;
-  --faint: #627785;
+  --bg: #262624;
+  --bg-soft: #1f1e1d;
+  --surface: rgba(48, 48, 46, 0.7);
+  --surface-strong: #30302e;
+  --surface-muted: rgba(255, 255, 255, 0.045);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f5f4ee;
+  --muted: #b4b0a6;
+  --faint: #87837a;
 
-  /* Signal accents */
-  --accent: #21d4fd;
-  --accent-soft: #8af6d2;
-  --accent-ink: #041018;
+  /* Warm accents */
+  --accent: #d97757;
+  --accent-soft: #e0a18a;
+  --accent-ink: #2a160d;
 
   /* Semantic tones */
-  --gain: #59f0ad;
-  --loss: #ffb45c;
-  --danger: #ff6b7d;
+  --gain: #6db38a;
+  --loss: #d97757;
+  --danger: #e0795a;
 
-  --shadow: 0 18px 54px rgba(0, 0, 0, 0.34);
-  --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.22);
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  --shadow-soft: 0 8px 22px rgba(0, 0, 0, 0.2);
   --sidebar: 292px;
   --radius-lg: 22px;
   --radius-md: 14px;
@@ -42,31 +42,31 @@
 }
 
 [data-theme="light"] {
-  color: #0b1620;
-  background: #f6fbff;
+  color: #292824;
+  background: #faf9f5;
 
   /* Light */
-  --bg: #f6fbff;
-  --bg-soft: #eaf3f9;
+  --bg: #faf9f5;
+  --bg-soft: #f0eee6;
   --surface: rgba(255, 255, 255, 0.85);
   --surface-strong: #ffffff;
-  --surface-muted: rgba(20, 120, 170, 0.055);
-  --border: rgba(12, 56, 82, 0.12);
-  --border-strong: rgba(12, 56, 82, 0.2);
-  --text: #0b1620;
-  --muted: #526977;
-  --faint: #8397a4;
+  --surface-muted: rgba(40, 38, 30, 0.045);
+  --border: rgba(40, 38, 30, 0.12);
+  --border-strong: rgba(40, 38, 30, 0.18);
+  --text: #292824;
+  --muted: #6c685e;
+  --faint: #989488;
 
-  --accent: #087ea4;
-  --accent-soft: #16b88f;
+  --accent: #c2613f;
+  --accent-soft: #d08868;
   --accent-ink: #ffffff;
 
-  --gain: #128d63;
-  --loss: #b96b10;
-  --danger: #c93f55;
+  --gain: #2f7d53;
+  --loss: #c2613f;
+  --danger: #bf4d36;
 
-  --shadow: 0 18px 42px rgba(18, 50, 70, 0.1);
-  --shadow-soft: 0 5px 18px rgba(18, 50, 70, 0.08);
+  --shadow: 0 18px 42px rgba(50, 44, 30, 0.09);
+  --shadow-soft: 0 5px 18px rgba(50, 44, 30, 0.07);
 }
 
 * {
@@ -78,7 +78,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    linear-gradient(135deg, rgba(33, 212, 253, 0.08), transparent 30%),
+    radial-gradient(circle at 18% 18%, rgba(224, 161, 138, 0.14), transparent 28%),
+    radial-gradient(circle at 90% 0%, rgba(215, 119, 87, 0.1), transparent 26%),
     linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 46%, var(--bg) 100%);
 }
 
@@ -627,7 +628,7 @@ h1 {
 }
 
 .greeting-gradient {
-  background: linear-gradient(74deg, #21d4fd 0, #8af6d2 16%, #9b8cff 32%, #ff6bcb 48%, #ffb45c 64%, #8af6d2 80%, #21d4fd 100%);
+  background: linear-gradient(74deg, #d97757 0, #e0a18a 16%, #b88a5f 32%, #d96570 48%, #f0b36a 64%, #e0a18a 80%, #d97757 100%);
   background-size: 420% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -909,7 +910,7 @@ h1 {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
-/* tonal variation kept subtle and within the Signal Lab palette */
+/* tonal variation kept subtle and within the warm palette */
 .config-card-icon.deep {
   background: color-mix(in srgb, var(--text) 9%, transparent);
   border-color: color-mix(in srgb, var(--text) 16%, transparent);
@@ -946,7 +947,7 @@ h1 {
 }
 
 [data-theme="light"] .config-label {
-  color: #405362;
+  color: #5f554b;
 }
 
 .config-card .gemini-custom-select {
