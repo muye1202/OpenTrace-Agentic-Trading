@@ -21,6 +21,7 @@ import {
 } from './transcriptDisplay';
 import EvidenceGraphPanel from './EvidenceGraphPanel';
 import DecisionTracePanel from './DecisionTracePanel';
+import DebateWorkflowPanel from './DebateWorkflowPanel';
 import TraderReasoningPanel from './TraderReasoningPanel';
 import ThemeCandidatesPanel from './ThemeCandidatesPanel';
 import CatalystDiagnosticsPanel from './CatalystDiagnosticsPanel';
@@ -280,6 +281,13 @@ function renderReportText(value) {
   return JSON.stringify(value, null, 2);
 }
 
+const getReportSectionData = (reports, key) => {
+  if (key === 'debate_workflow') {
+    return reports?.investment_debate_state || reports?.risk_debate_state || null;
+  }
+  return reports?.[key];
+};
+
 const ReportMarkdown = memo(({ markdown, hiddenDecisionJson }) => (
   <>
     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -333,6 +341,8 @@ const ReportSection = memo(({ sectionKey, label, data, isExpanded, onToggle, all
           <EvidenceGraphPanel data={data} />
         ) : sectionKey === 'decision_trace' ? (
           <DecisionTracePanel trace={data} evidenceGraph={allReports?.evidence_graph} />
+        ) : sectionKey === 'debate_workflow' ? (
+          <DebateWorkflowPanel reports={allReports} />
         ) : sectionKey === 'agent_reasoning_trace' ? (
           <TraderReasoningPanel data={data} />
         ) : sectionKey === 'trader_investment_plan' ? (
@@ -671,7 +681,7 @@ function App() {
 
   const hasConversation = logs.length > 0 || Object.keys(reports).length > 0 || Boolean(activeSessionId);
   const currentHorizon = getHorizonMeta(timeHorizon);
-  const availableReports = REPORT_SECTIONS.filter(([key]) => reports[key]);
+  const availableReports = REPORT_SECTIONS.filter(([key]) => getReportSectionData(reports, key));
 
   // Total tool calls for the live activity bar
   const toolCallCount = useMemo(() => logs.filter(l => l.type === 'tool').length, [logs]);
@@ -2017,7 +2027,7 @@ function App() {
                               return {
                                 key,
                                 label: sectionMeta ? sectionMeta[1] : key,
-                                data: reports[key]
+                                data: getReportSectionData(reports, key)
                               };
                             })
                             .filter(s => s.data);

@@ -73,7 +73,14 @@ Your task is to actively counter the arguments of the Risky and Neutral Analysts
 {sections["reports"]}
 Here is the current conversation history: {sections["history_tail"]} {sections["current_response"]}. If there are no responses from the other viewpoints, do not halluncinate and just present your point.
 
-Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting."""
+Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets.
+
+RISK PATCH CONTRACT:
+- End with exactly one of: PLAN_PATCH, REJECT_PATCH, or NO_MATERIAL_CHANGE.
+- A PLAN_PATCH must modify one executable field: action, execution_mode, order_type, entry_price, entry_condition, stop_loss, take_profit, position_size_pct, max_loss_pct, trigger_condition, time_horizon, or invalidation_condition.
+- Every PLAN_PATCH must cite evidence IDs from the evidence projection.
+- Format PLAN_PATCH as valid JSON with patch_id, author, target_plan_version, patch_type, field, old_value, new_value, evidence_ids, reason, expected_effect, and materiality.
+- Do not provide general commentary unless it is attached to a patch, rejection, or no-op rationale."""
 
         response = llm.invoke(prompt)
 

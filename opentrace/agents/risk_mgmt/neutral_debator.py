@@ -73,7 +73,14 @@ Your task is to challenge both the Risky and Safe Analysts, pointing out where e
 {sections["reports"]}
 Here is the current conversation history: {sections["history_tail"]} {sections["current_response"]}. If there are no responses from the other viewpoints, do not halluncinate and just present your point.
 
-Engage actively by analyzing both sides critically, addressing weaknesses in the risky and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting."""
+Engage actively by analyzing both sides critically, addressing weaknesses in the risky and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility.
+
+RISK PATCH CONTRACT:
+- End with exactly one of: PLAN_PATCH, REJECT_PATCH, or NO_MATERIAL_CHANGE.
+- A PLAN_PATCH must modify one executable field: action, execution_mode, order_type, entry_price, entry_condition, stop_loss, take_profit, position_size_pct, max_loss_pct, trigger_condition, time_horizon, or invalidation_condition.
+- Every PLAN_PATCH must cite evidence IDs from the evidence projection.
+- Format PLAN_PATCH as valid JSON with patch_id, author, target_plan_version, patch_type, field, old_value, new_value, evidence_ids, reason, expected_effect, and materiality.
+- Do not provide general commentary unless it is attached to a patch, rejection, or no-op rationale."""
 
         response = llm.invoke(prompt)
 

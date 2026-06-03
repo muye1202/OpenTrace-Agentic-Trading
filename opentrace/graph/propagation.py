@@ -8,6 +8,7 @@ from opentrace.utils.market_session import (
 from opentrace.agents.utils.agent_runtime.time_horizon import get_time_horizon_spec
 from opentrace.agents.analysts.workbench import normalize_ledger
 from opentrace.agents.utils.agent_runtime.evidence_graph import build_evidence_graph
+from opentrace.graph.evidence_ledger_schema import validate_admissible_evidence
 from opentrace.graph.reasoning_trace import empty_agent_reasoning_trace
 
 
@@ -28,6 +29,8 @@ class Propagator:
         """Create the initial state for the agent graph."""
         market_session = describe_us_market_session()
         horizon = get_time_horizon_spec(time_horizon).key
+        empty_graph = build_evidence_graph({})
+        empty_admissibility = validate_admissible_evidence([], time_horizon=horizon)
         return {
             "messages": [("human", company_name)],
             "portfolio_context": portfolio_context,
@@ -76,8 +79,18 @@ class Propagator:
             "catalyst_event_report_structured": {},
             "catalyst_parse_telemetry": {},
             "evidence_source_facts": [],
-            "evidence_graph": build_evidence_graph({}),
+            "evidence_graph": empty_graph,
             "evidence_graph_audit": [],
+            "evidence_ledger": [],
+            "admissibility_report": empty_admissibility,
+            "critical_evidence_ids": [],
+            "contested_issues": [],
+            "research_debate_turns": [],
+            "thesis_ledger": {},
+            "trader_plan_v1": {},
+            "risk_patches": [],
+            "risk_patch_validation": [],
+            "decision_diff": {},
             "decision_trace": {},
             "trader_decision_brief": {},
             "trade_setup_diagnosis": {},

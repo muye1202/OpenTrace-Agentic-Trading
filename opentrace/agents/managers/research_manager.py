@@ -70,6 +70,7 @@ Your Recommendation: A decisive stance supported by the most convincing argument
 Rationale: An explanation of why these arguments lead to your conclusion.
 Strategic Actions: Concrete steps for implementing the recommendation.
 Sizing Guidance: Recommend an appropriate position size. The system will NOT ask the user for a sizing percentage; the trader may either specify an explicit share QUANTITY or omit QUANTITY and instead provide POSITION_SIZE_PCT (interpreted as % of available capital/effective buying power).
+Thesis Ledger: Include a compact machine-readable JSON object named THESIS_LEDGER_JSON with winning_thesis, accepted_claims, rejected_claims, unresolved_uncertainties, and recommended_plan_constraints. Every accepted claim must cite evidence IDs or inference IDs from the evidence graph projection.
 Take into account your past mistakes on similar situations. Use these insights to refine your decision-making and ensure you are learning and improving. Present your analysis conversationally, as if speaking naturally, without special formatting. 
  
 Here are your past reflections on mistakes:
@@ -107,7 +108,37 @@ Debate History:
         return {
             "investment_debate_state": new_investment_debate_state,
             "investment_plan": response.content,
+            "thesis_ledger": _extract_thesis_ledger(response.content),
             "market_snapshot": market_snapshot,
         }
 
     return research_manager_node
+
+
+def _extract_thesis_ledger(text: str) -> dict:
+    marker = "THESIS_LEDGER_JSON"
+    content = str(text or "")
+    idx = content.upper().find(marker)
+    if idx < 0:
+        return {}
+    tail = content[idx + len(marker) :]
+    start = tail.find("{")
+    if start < 0:
+        return {}
+    depth = 0
+    end = -1
+    for pos, char in enumerate(tail[start:], start=start):
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = pos + 1
+                break
+    if end < 0:
+        return {}
+    try:
+        parsed = json.loads(tail[start:end])
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

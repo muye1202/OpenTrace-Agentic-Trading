@@ -14,7 +14,13 @@ from opentrace.agents.utils.agent_runtime.evidence_graph import (
     build_decision_trace,
     format_evidence_projection,
 )
+from opentrace.agents.trader.decision_brief import build_trader_plan_v1
 from opentrace.execution.decision_guard import build_market_snapshot
+from opentrace.graph.evidence_ledger_schema import build_evidence_ledger
+from opentrace.graph.plan_patch_schema import (
+    extract_plan_patches_from_text,
+    validate_plan_patches,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -151,6 +157,8 @@ Deliverables:
 - A clear and actionable recommendation: Buy, Sell, or Hold.
 - Detailed reasoning anchored in the debate and past reflections.
 - Preserve Trader-selected mode unless a hard risk/executability constraint requires override.
+- Explicitly state whether the final decision materially changes the Trader proposal.
+- List accepted risk patches and rejected risk patches. If there is no material change, explain why all patches failed evidence, materiality, or portfolio validation.
 
 ---
 
@@ -163,6 +171,12 @@ Focus on actionable insights and continuous improvement.
 
 OUTPUT CONTRACT (STRICT):
 - Provide your normal reasoning narrative first.
+- Include a compact DECISION_DIFF section before the JSON block:
+  - FROM_TRADER_PLAN: summarize changed executable fields.
+  - TO_FINAL_DECISION: summarize final executable fields.
+  - ACCEPTED_PATCHES: patch IDs or [].
+  - REJECTED_PATCHES: patch IDs with reasons or [].
+  - NO_MATERIAL_CHANGE_REASON: null or a concrete reason.
 - Then END your response with exactly one canonical JSON block between tags:
   BEGIN_DECISION_JSON
   {{ ... }}
@@ -279,6 +293,22 @@ Validation-critical constraints:
             base_backoff_s=float(config.get("risk_manager_backoff_base_s", 1.0) or 1.0),
             max_backoff_s=float(config.get("risk_manager_backoff_max_s", 30.0) or 30.0),
         )
+        trader_plan_v1 = state.get("trader_plan_v1")
+        if not isinstance(trader_plan_v1, dict) or not trader_plan_v1:
+            trader_plan_v1 = build_trader_plan_v1(state)
+        evidence_ledger = state.get("evidence_ledger")
+        if not isinstance(evidence_ledger, list):
+            evidence_ledger = build_evidence_ledger(state)
+        risk_patches = extract_plan_patches_from_text(history)
+        risk_patch_validation = validate_plan_patches(
+            risk_patches,
+            trader_plan=trader_plan_v1,
+            evidence_ids=[
+                str(item.get("evidence_id"))
+                for item in evidence_ledger
+                if isinstance(item, dict) and item.get("evidence_id")
+            ],
+        )
 
         new_risk_debate_state = {
             "judge_decision": response.content,
@@ -296,6 +326,9 @@ Validation-critical constraints:
         return {
             "risk_debate_state": new_risk_debate_state,
             "final_trade_decision": response.content,
+            "trader_plan_v1": trader_plan_v1,
+            "risk_patches": risk_patches,
+            "risk_patch_validation": risk_patch_validation,
             "decision_trace": build_decision_trace(
                 {**state, "final_trade_decision": response.content},
                 response.content,
@@ -316,6 +349,4 @@ def _extract_trader_execution_intent(trader_plan_text: str) -> str:
     if not m:
         return "UNSPECIFIED"
     return m.group(1).upper().replace(" ", "_")
-
-
 

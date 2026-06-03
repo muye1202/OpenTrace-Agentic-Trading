@@ -7,6 +7,7 @@ from opentrace.agents.trader.decision_brief import (
     build_scenario_analysis,
     build_trade_setup_diagnosis,
     build_trader_decision_brief,
+    build_trader_plan_v1,
 )
 from opentrace.agents.utils.agent_runtime.evidence_graph import format_evidence_projection
 from opentrace.agents.utils.agent_runtime.time_horizon import get_time_horizon_spec
@@ -51,6 +52,13 @@ def create_trader(llm, memory):
             market_snapshot=market_snapshot,
             market_session_context=market_session_context,
             catalyst_event_report_structured=state.get("catalyst_event_report_structured", {}),
+        )
+        trader_plan_v1 = build_trader_plan_v1(
+            {
+                **state,
+                "trader_decision_brief": decision_brief,
+                "execution_plan_compiler": execution_plan_compiler,
+            }
         )
 
         memory_query = json.dumps(
@@ -108,6 +116,9 @@ EXECUTION PLAN COMPILER JSON:
 
 TRADER SELF-AUDIT JSON:
 {json.dumps(trader_self_audit, ensure_ascii=False, indent=2)}
+
+TRADER PLAN V1 JSON:
+{json.dumps(trader_plan_v1, ensure_ascii=False, indent=2)}
 
 MARKET_SESSION_CONTEXT:
 {market_session_context or "Not provided."}
@@ -216,6 +227,7 @@ FINAL TRANSACTION PROPOSAL:
             "scenario_analysis": scenario_analysis,
             "execution_plan_compiler": execution_plan_compiler,
             "trader_self_audit": trader_self_audit,
+            "trader_plan_v1": trader_plan_v1,
         }
 
         return {
@@ -227,6 +239,7 @@ FINAL TRANSACTION PROPOSAL:
             "scenario_analysis": scenario_analysis,
             "execution_plan_compiler": execution_plan_compiler,
             "trader_self_audit": trader_self_audit,
+            "trader_plan_v1": trader_plan_v1,
             "agent_reasoning_trace": build_agent_reasoning_trace(state_with_trader_outputs),
             "sender": name,
         }

@@ -73,7 +73,14 @@ Your task is to create a compelling case for the trader's decision by questionin
 {sections["reports"]}
 Here is the current conversation history: {sections["history_tail"]} {sections["current_response"]}. If there are no responses from the other viewpoints, do not halluncinate and just present your point.
 
-Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""
+Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal.
+
+RISK PATCH CONTRACT:
+- End with exactly one of: PLAN_PATCH, REJECT_PATCH, or NO_MATERIAL_CHANGE.
+- A PLAN_PATCH must modify one executable field: action, execution_mode, order_type, entry_price, entry_condition, stop_loss, take_profit, position_size_pct, max_loss_pct, trigger_condition, time_horizon, or invalidation_condition.
+- Every PLAN_PATCH must cite evidence IDs from the evidence projection.
+- Format PLAN_PATCH as valid JSON with patch_id, author, target_plan_version, patch_type, field, old_value, new_value, evidence_ids, reason, expected_effect, and materiality.
+- Do not provide general commentary unless it is attached to a patch, rejection, or no-op rationale."""
 
         response = llm.invoke(prompt)
 

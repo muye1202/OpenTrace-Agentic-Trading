@@ -24,7 +24,9 @@ from opentrace.agents.utils.memory.memory import FinancialSituationMemory
 from opentrace.execution.portfolio_context import fetch_portfolio_context
 from opentrace.utils.market_session import now_et
 from opentrace.execution.decision_guard import build_market_snapshot, evaluate_data_quality_fault
+from opentrace.agents.trader.decision_brief import build_trader_plan_v1
 from opentrace.agents.utils.agent_runtime.evidence_graph import build_decision_trace
+from opentrace.graph.decision_diff import build_decision_diff
 from opentrace.graph.reasoning_trace import build_agent_reasoning_trace
 from opentrace.dataflows.config import set_config
 from opentrace.graph.provider_settings import azure_foundry_reasoning_mode, resolve_llm_endpoint
@@ -935,6 +937,24 @@ class OpenTraceGraph:
         )
         final_state["final_trade_decision_structured"] = structured
         final_state["final_trade_decision_validation_error"] = err or ""
+        trader_plan = final_state.get("trader_plan_v1")
+        if not isinstance(trader_plan, dict) or not trader_plan:
+            trader_plan = build_trader_plan_v1(final_state)
+            final_state["trader_plan_v1"] = trader_plan
+        final_state["decision_diff"] = build_decision_diff(
+            trader_plan,
+            structured if isinstance(structured, dict) else {},
+            accepted_patch_ids=[
+                str(item.get("patch_id"))
+                for item in final_state.get("risk_patch_validation", []) or []
+                if isinstance(item, dict) and item.get("valid") and item.get("patch_id")
+            ],
+            rejected_patches=[
+                {"patch_id": str(item.get("patch_id") or ""), "reason": str(item.get("reason") or "")}
+                for item in final_state.get("risk_patch_validation", []) or []
+                if isinstance(item, dict) and not item.get("valid")
+            ],
+        )
         final_state["decision_guard"] = {
             "validation_ok": isinstance(structured, dict) and not bool(err),
             "violations": [] if not err else [err],
@@ -1014,6 +1034,24 @@ class OpenTraceGraph:
 
         final_state["final_trade_decision_structured"] = structured
         final_state["final_trade_decision_validation_error"] = validation_error or ""
+        trader_plan = final_state.get("trader_plan_v1")
+        if not isinstance(trader_plan, dict) or not trader_plan:
+            trader_plan = build_trader_plan_v1(final_state)
+            final_state["trader_plan_v1"] = trader_plan
+        final_state["decision_diff"] = build_decision_diff(
+            trader_plan,
+            structured if isinstance(structured, dict) else {},
+            accepted_patch_ids=[
+                str(item.get("patch_id"))
+                for item in final_state.get("risk_patch_validation", []) or []
+                if isinstance(item, dict) and item.get("valid") and item.get("patch_id")
+            ],
+            rejected_patches=[
+                {"patch_id": str(item.get("patch_id") or ""), "reason": str(item.get("reason") or "")}
+                for item in final_state.get("risk_patch_validation", []) or []
+                if isinstance(item, dict) and not item.get("valid")
+            ],
+        )
         guard.update(
             {
                 "validation_ok": isinstance(structured, dict) and not bool(validation_error),

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_ANALYSTS,
   REPORT_SECTIONS,
+  REPORT_GROUPS,
   ANALYST_SUMMARY_LABEL,
   DEFAULT_EXPANDED_REPORT_SECTIONS,
   isReportSectionExpanded,
@@ -40,6 +41,15 @@ assert.deepEqual(
 );
 
 assert.equal(ANALYST_SUMMARY_LABEL, 'Catalyst, Market, Social, News, Fundamentals');
+assert.equal(REPORT_SECTIONS.some(([key, label]) => key === 'debate_workflow' && label === 'Debate Workflow'), true);
+assert.deepEqual(
+  REPORT_GROUPS.find((group) => group.id === 'evidence')?.sections,
+  ['evidence_graph', 'decision_trace', 'debate_workflow'],
+);
+assert.deepEqual(
+  REPORT_GROUPS.find((group) => group.id === 'pipeline')?.sections,
+  ['trader_investment_plan'],
+);
 
 assert.deepEqual(DEFAULT_EXPANDED_REPORT_SECTIONS, {});
 

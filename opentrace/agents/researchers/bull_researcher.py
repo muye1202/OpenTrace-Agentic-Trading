@@ -72,6 +72,12 @@ Conversation history of the debate: {sections["history_tail"]}
 Last bear argument: {sections["current_response"]}
 Reflections from similar situations and lessons learned: {sections["memories"]}
 Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position. You must also address reflections and learn from lessons and mistakes you made in the past.
+
+DEBATE CONTRACT:
+- Every material claim must cite at least one evidence ID from the evidence graph projection.
+- For each material claim, name the decision field affected: action, execution_mode, order_type, entry_condition, stop_loss, take_profit, position_size_pct, trigger_condition, time_horizon, or invalidation_condition.
+- Include a concrete plan implication and falsification condition.
+- If you cannot cite admissible evidence for a claim, write NO_ADMISSIBLE_EVIDENCE and do not use that claim to support the plan.
 """
 
         response = llm.invoke(prompt)

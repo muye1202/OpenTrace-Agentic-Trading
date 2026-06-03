@@ -105,6 +105,18 @@ class TraderSelfAudit(TypedDict):
     final_action_consistent: bool
 
 
+class TraderPlanV1(TypedDict, total=False):
+    plan_id: str
+    action: str
+    execution_mode: str
+    order_type: str
+    position_size_pct: float | None
+    entry_condition: str | None
+    stop_loss: float | None
+    take_profit: float | None
+    rationale_links: dict[str, list[str]]
+
+
 def build_trader_decision_brief(state: dict[str, Any] | None) -> TraderDecisionBrief:
     state = state or {}
     graph = state.get("evidence_graph") if isinstance(state.get("evidence_graph"), dict) else {}
@@ -411,6 +423,54 @@ def apply_trader_self_audit(
     return audit, repaired  # type: ignore[return-value]
 
 
+def build_trader_plan_v1(state: dict[str, Any] | None) -> TraderPlanV1:
+    state = state or {}
+    compiler = state.get("execution_plan_compiler") if isinstance(state.get("execution_plan_compiler"), dict) else {}
+    contract = compiler.get("canonical_json_contract") if isinstance(compiler.get("canonical_json_contract"), dict) else {}
+    evidence_ids = _ledger_evidence_ids_by_source(state)
+    opposing = _claim_source_ids((state.get("trader_decision_brief") or {}).get("top_opposing_evidence"))
+    supporting = _claim_source_ids((state.get("trader_decision_brief") or {}).get("top_supporting_evidence"))
+    all_refs = _map_source_ids_to_evidence([*supporting, *opposing], evidence_ids)
+    if not all_refs:
+        all_refs = ["execution_plan_compiler"]
+
+    action = str(
+        compiler.get("recommended_action")
+        or contract.get("action")
+        or "HOLD"
+    ).strip().upper()
+    execution_mode = _execution_mode(
+        compiler.get("recommended_execution_intent")
+        or contract.get("execution_intent")
+    )
+    order_type = str(compiler.get("order_type") or _contract_order_type(contract) or "MARKET").strip().upper()
+    entry_condition = _entry_condition(contract, execution_mode)
+    position_size_pct = _float_or_none(compiler.get("position_size_pct"))
+    stop_loss = _float_or_none(compiler.get("stop_loss") or _contract_action_template_value(contract, "stop_loss"))
+    take_profit = _float_or_none(compiler.get("take_profit") or _contract_action_template_value(contract, "take_profit"))
+
+    links: dict[str, list[str]] = {
+        "action": all_refs,
+        "execution_mode": all_refs,
+        "order_type": ["execution_plan_compiler", *all_refs[:2]],
+        "position_size_pct": ["recommended_plan_constraints", *all_refs],
+        "entry_condition": all_refs,
+        "stop_loss": all_refs,
+        "take_profit": all_refs,
+    }
+    return {
+        "plan_id": "trader_plan_v1",
+        "action": action,
+        "execution_mode": execution_mode,
+        "order_type": order_type,
+        "position_size_pct": position_size_pct,
+        "entry_condition": entry_condition,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "rationale_links": {key: list(dict.fromkeys(value)) for key, value in links.items()},
+    }
+
+
 def build_trade_setup_diagnosis(brief: TraderDecisionBrief | dict[str, Any]) -> TradeSetupDiagnosis:
     evidence_by_domain = brief.get("evidence_by_domain") or {}
     all_claims = [
@@ -454,6 +514,80 @@ def _facts_by_id(raw_facts: Any) -> dict[str, dict[str, Any]]:
         for fact in raw_facts or []
         if isinstance(fact, dict) and str(fact.get("id") or "").strip()
     }
+
+
+def _ledger_evidence_ids_by_source(state: dict[str, Any]) -> dict[str, str]:
+    ledger = state.get("evidence_ledger")
+    if not isinstance(ledger, list) or not ledger:
+        from opentrace.graph.evidence_ledger_schema import build_evidence_ledger
+
+        ledger = build_evidence_ledger(state)
+    out: dict[str, str] = {}
+    for item in ledger:
+        if not isinstance(item, dict):
+            continue
+        evidence_id = str(item.get("evidence_id") or "").strip()
+        if not evidence_id:
+            continue
+        for key in ("source_ref", "source_node_id"):
+            source = str(item.get(key) or "").strip()
+            if source:
+                out[source] = evidence_id
+    return out
+
+
+def _claim_source_ids(claims: Any) -> list[str]:
+    out: list[str] = []
+    for claim in claims or []:
+        if not isinstance(claim, dict):
+            continue
+        out.extend(str(item) for item in claim.get("source_ids") or [] if str(item))
+    return list(dict.fromkeys(out))
+
+
+def _map_source_ids_to_evidence(source_ids: list[str], evidence_by_source: dict[str, str]) -> list[str]:
+    return list(dict.fromkeys(evidence_by_source[item] for item in source_ids if item in evidence_by_source))
+
+
+def _execution_mode(value: Any) -> str:
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if text == "act_now":
+        return "act_now"
+    return "wait_for_trigger"
+
+
+def _contract_order_type(contract: dict[str, Any]) -> str | None:
+    if contract.get("order_type"):
+        return str(contract.get("order_type"))
+    plan = contract.get("execution_plan")
+    if isinstance(plan, list) and plan:
+        template = plan[0].get("action_template") if isinstance(plan[0], dict) else None
+        if isinstance(template, dict) and template.get("order_type"):
+            return str(template.get("order_type"))
+    return None
+
+
+def _contract_action_template_value(contract: dict[str, Any], key: str) -> Any:
+    if key in contract:
+        return contract.get(key)
+    plan = contract.get("execution_plan")
+    if isinstance(plan, list) and plan:
+        template = plan[0].get("action_template") if isinstance(plan[0], dict) else None
+        if isinstance(template, dict):
+            return template.get(key)
+    return None
+
+
+def _entry_condition(contract: dict[str, Any], execution_mode: str) -> str | None:
+    if execution_mode == "act_now":
+        return "act_now"
+    plan = contract.get("execution_plan")
+    if isinstance(plan, list) and plan:
+        branch = plan[0] if isinstance(plan[0], dict) else {}
+        branch_id = str(branch.get("branch_id") or contract.get("default_action") or "").strip()
+        if branch_id:
+            return branch_id
+    return str(contract.get("default_action") or "wait_for_trigger").strip()
 
 
 def _claim_from_inference(inference: Any, facts: dict[str, dict[str, Any]]) -> EvidenceClaim | None:

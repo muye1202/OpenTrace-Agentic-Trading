@@ -15,9 +15,8 @@ export const REPORT_SECTIONS = [
   ['fundamentals_report', 'Fundamentals'],
   ['evidence_graph', 'Evidence Graph'],
   ['decision_trace', 'Decision Trace'],
-  ['investment_debate_state', 'Debate'],
+  ['debate_workflow', 'Debate Workflow'],
   ['trader_investment_plan', 'Trader Plan'],
-  ['risk_debate_state', 'Risk Debate'],
   ['final_trade_decision', 'Final Decision'],
 ];
 
@@ -40,13 +39,13 @@ export const REPORT_GROUPS = [
     id: 'evidence',
     label: 'Evidence & Tracing',
     icon: '🔍',
-    sections: ['evidence_graph', 'decision_trace'],
+    sections: ['evidence_graph', 'decision_trace', 'debate_workflow'],
   },
   {
     id: 'pipeline',
     label: 'Trading Pipeline',
     icon: '⚙️',
-    sections: ['investment_debate_state', 'trader_investment_plan', 'risk_debate_state'],
+    sections: ['trader_investment_plan'],
   },
   {
     id: 'final',

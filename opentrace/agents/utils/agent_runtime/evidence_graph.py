@@ -6,6 +6,11 @@ from typing import Any, Dict, List, Literal, TypedDict
 
 from opentrace.agents.analysts.workbench import normalize_ledger
 from opentrace.agents.utils.agent_runtime.context_budget import cap_section, get_budget_settings
+from opentrace.graph.evidence_ledger_schema import (
+    build_evidence_ledger,
+    rank_critical_evidence,
+    validate_admissible_evidence,
+)
 
 
 EvidenceDomain = Literal["market", "sentiment", "news", "fundamentals", "catalyst"]
@@ -521,10 +526,20 @@ def create_capture_evidence_facts_node(domain: str):
             "audit_issues": [],
             "generated_from": "vendor_facts",
         }
+        ledger = build_evidence_ledger({**state, "evidence_graph": graph})
+        admissibility = validate_admissible_evidence(
+            ledger,
+            time_horizon=str(state.get("time_horizon") or ""),
+        )
         return {
             "evidence_source_facts": merged,
             "evidence_graph": graph,
             "evidence_graph_audit": graph["audit_issues"],
+            "evidence_ledger": ledger,
+            "admissibility_report": admissibility,
+            "critical_evidence_ids": [
+                item["evidence_id"] for item in rank_critical_evidence(ledger)
+            ],
         }
 
     return capture_evidence_facts_node
@@ -533,9 +548,19 @@ def create_capture_evidence_facts_node(domain: str):
 def create_evidence_graph_node():
     def evidence_graph_node(state) -> dict:
         graph = build_evidence_graph(state)
+        ledger = build_evidence_ledger({**state, "evidence_graph": graph})
+        admissibility = validate_admissible_evidence(
+            ledger,
+            time_horizon=str(state.get("time_horizon") or ""),
+        )
         return {
             "evidence_graph": graph,
             "evidence_graph_audit": graph.get("audit_issues", []),
+            "evidence_ledger": ledger,
+            "admissibility_report": admissibility,
+            "critical_evidence_ids": [
+                item["evidence_id"] for item in rank_critical_evidence(ledger)
+            ],
         }
 
     return evidence_graph_node
@@ -560,6 +585,7 @@ def format_evidence_projection(
     limit = int(max_chars or settings["section_max_chars_report"] * 2)
     title = str(audience).replace("_", " ").title()
     lines = [f"# Evidence Graph Projection: {title}"]
+    _append_evidence_ledger(lines, state or {})
     _append_catalyst_risk_snapshot(lines, state or {})
     if audience == "bull":
         lines.append("Bullish inferences:")
@@ -589,6 +615,38 @@ def format_evidence_projection(
         _append_conflicts(lines, graph)
         _append_top_facts(lines, graph)
     return cap_section(f"evidence_projection_{audience}", "\n".join(lines), limit)
+
+
+def _append_evidence_ledger(lines: list[str], state: Dict[str, Any]) -> None:
+    ledger = state.get("evidence_ledger")
+    if not isinstance(ledger, list) or not ledger:
+        ledger = build_evidence_ledger(state)
+    admissibility = state.get("admissibility_report")
+    if not isinstance(admissibility, dict):
+        admissibility = validate_admissible_evidence(
+            ledger,
+            time_horizon=str(state.get("time_horizon") or ""),
+        )
+    accepted = set(admissibility.get("accepted_evidence_ids") or [])
+    ranked = rank_critical_evidence(
+        [item for item in ledger if item.get("evidence_id") in accepted]
+    )
+    if not ranked:
+        return
+    lines.append("ADMISSIBLE EVIDENCE LEDGER")
+    for item in ranked[:8]:
+        supports = ", ".join(item.get("supports") or [])
+        lines.append(
+            "- {evidence_id} [{polarity}, criticality {criticality:.2f}] {claim} "
+            "(source_ref: {source_ref}; supports: {supports})".format(
+                evidence_id=item.get("evidence_id"),
+                polarity=item.get("polarity", "neutral"),
+                criticality=float(item.get("criticality", 0.0) or 0.0),
+                claim=str(item.get("claim") or "")[:180],
+                source_ref=item.get("source_ref", ""),
+                supports=supports or "none",
+            )
+        )
 
 
 def _append_catalyst_risk_snapshot(lines: list[str], state: Dict[str, Any]) -> None:
