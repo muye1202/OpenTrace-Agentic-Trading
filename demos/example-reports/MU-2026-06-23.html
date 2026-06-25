@@ -144,6 +144,14 @@
     h3 { font-size: 17px; margin-top: 24px; color: var(--accent); }
     h4 { font-size: 14px; margin-top: 18px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
     p { margin: 0 0 12px; }
+    p, li, td, th, blockquote, summary, .panel-toggle span,
+    .trace-card, .trace-chip, .trace-chip-label, .trace-chip-value,
+    .chip-grid code, .brief-stat, .brief-stat-value, .evidence-claim,
+    .setup-detail, .exec-intent, .param-cell, .param-value,
+    .branch-header, .branch-conditions, .branch-action {
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
     /* Keep prose to a comfortable reading measure; tables stay full width. */
     .panel-body > p, .panel-body > ul, .panel-body > ol,
     .intro p, .intro ul, blockquote { max-width: var(--measure); }
@@ -211,9 +219,9 @@
     tr:last-child td { border-bottom: 0; }
     ul { margin: 0 0 14px 20px; padding: 0; }
     li { margin: 5px 0; }
-    code { padding: 1px 4px; border-radius: 4px; background: #eef2f5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.92em; }
+    code { padding: 1px 4px; border-radius: 4px; background: #eef2f5; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.92em; overflow-wrap: anywhere; word-break: normal; }
     pre { overflow: auto; padding: 14px; border-radius: 6px; background: #111827; color: #e5e7eb; }
-    pre code { padding: 0; background: transparent; color: inherit; }
+    pre code { padding: 0; background: transparent; color: inherit; overflow-wrap: normal; word-break: normal; }
     .empty-search {
       display: none;
       padding: 24px;
@@ -252,7 +260,7 @@
     .trace-badge--agent { background: #e0e7ff; color: #3730a3; }
     .trace-badge--kind { background: #f3f4f6; color: #4b5563; }
     .trace-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .trace-chip { display: inline-flex; gap: 4px; font-size: 12px; padding: 3px 8px; border-radius: 4px; background: #fff; border: 1px solid var(--line); }
+    .trace-chip { display: inline-flex; flex-wrap: wrap; gap: 4px; max-width: 100%; font-size: 12px; padding: 3px 8px; border-radius: 4px; background: #fff; border: 1px solid var(--line); }
     .trace-chip-label { color: var(--muted); }
     .trace-chip-value { font-weight: 600; }
 
@@ -270,7 +278,7 @@
     .decision-section { margin-bottom: 16px; }
     .decision-section h4 { margin: 0 0 8px; }
     .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-    .chip-grid code { font-size: 11px; }
+    .chip-grid code { max-width: 100%; font-size: 11px; white-space: normal; }
     .text-muted { color: var(--muted); }
 
     /* ── Audit groups ── */
@@ -357,7 +365,7 @@
     .exec-section { margin-bottom: 14px; }
     .exec-section h4 { margin: 0 0 8px; }
     .exec-branch { padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; margin: 6px 0; background: #fafbfc; }
-    .branch-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .branch-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
     .branch-conditions { font-size: 13px; margin-bottom: 4px; color: var(--muted); }
     .branch-action { font-size: 13px; font-weight: 600; }
     .check-list { list-style: none; margin: 0; padding: 0; }
@@ -379,7 +387,7 @@
     .evgraph-summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fafbfc; margin-bottom: 18px; }
     .evgraph-total { font-size: 15px; font-weight: 800; color: var(--text); white-space: nowrap; }
     .evgraph-domain-pills { display: flex; flex-wrap: wrap; gap: 8px; }
-    .evgraph-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; white-space: nowrap; }
+    .evgraph-pill { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 5px; max-width: 100%; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; white-space: normal; overflow-wrap: anywhere; }
     .evgraph-pill strong { font-weight: 800; }
     .evgraph-domain { margin-bottom: 16px; }
     .evgraph-domain-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; margin: 0 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--domain-accent, var(--line)); color: var(--text); }
@@ -391,8 +399,8 @@
     .evgraph-fact:only-of-type { border-radius: 8px; }
     .evgraph-fact--header { background: #fafbfc; }
     .evgraph-fact--header .evgraph-fact-claim { font-weight: 700; font-size: 13px; }
-    .evgraph-fact-id { font-size: 10px; font-family: var(--font-mono, 'SF Mono', 'Consolas', monospace); padding: 2px 6px; border-radius: 4px; background: #f3f4f6; color: #6b7280; white-space: nowrap; font-weight: 500; }
-    .evgraph-fact-claim { font-size: 13px; color: var(--text); word-break: break-word; }
+    .evgraph-fact-id { font-size: 10px; font-family: var(--font-mono, 'SF Mono', 'Consolas', monospace); padding: 2px 6px; border-radius: 4px; background: #f3f4f6; color: #6b7280; font-weight: 500; overflow-wrap: anywhere; white-space: normal; }
+    .evgraph-fact-claim { font-size: 13px; color: var(--text); overflow-wrap: anywhere; word-break: normal; }
     .evgraph-footer { font-size: 12px; color: var(--muted); font-style: italic; padding: 10px 0 0; text-align: center; }
 
     /* Enhanced evidence JSON / audit readers */
@@ -441,7 +449,7 @@
     }
     .graph-domain-grid, .audit-code-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
       gap: 12px;
     }
     .graph-domain-card, .audit-code-card {
@@ -450,6 +458,7 @@
       border-left: 4px solid var(--domain-accent, var(--accent));
       border-radius: 8px;
       background: #fff;
+      min-width: 0;
     }
     .graph-domain-card header, .audit-code-card header {
       display: flex;
@@ -459,7 +468,7 @@
       border-bottom: 1px solid var(--line);
       background: #fafbfc;
     }
-    .graph-domain-title, .audit-code-title { min-width: 0; font-weight: 800; color: var(--text); }
+    .graph-domain-title, .audit-code-title { min-width: 0; font-weight: 800; color: var(--text); overflow-wrap: anywhere; }
     .graph-domain-meta, .audit-code-meta { flex-shrink: 0; color: var(--muted); font-size: 12px; font-weight: 700; }
     .graph-fact-list, .audit-issue-list { display: grid; gap: 0; }
     .graph-fact-card, .audit-issue-card {
@@ -467,13 +476,14 @@
       border-bottom: 1px solid #eef2f5;
     }
     .graph-fact-card:last-child, .audit-issue-card:last-child { border-bottom: 0; }
-    .graph-fact-card strong, .audit-issue-card strong { display: block; margin-bottom: 4px; font-size: 12px; color: #344054; }
-    .graph-fact-card p, .audit-issue-card p { margin: 0; color: var(--text); font-size: 13px; }
+    .graph-fact-card strong, .audit-issue-card strong { display: block; margin-bottom: 4px; font-size: 12px; color: #344054; overflow-wrap: anywhere; }
+    .graph-fact-card p, .audit-issue-card p { margin: 0; color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
     .graph-fact-meta, .audit-issue-meta {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
       margin-top: 8px;
+      min-width: 0;
     }
     .mini-chip {
       display: inline-flex;
@@ -486,6 +496,10 @@
       color: #475467;
       font-size: 11px;
       font-weight: 700;
+      max-width: 100%;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     .mini-chip--high { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
     .mini-chip--medium { border-color: #fed7aa; background: #fff7ed; color: #9a3412; }
@@ -5757,7 +5771,7 @@
         const topFacts = domainFacts.slice(0, 4).map((fact) => `
           <div class="graph-fact-card">
             <strong>${escapeHtml(fact.id || 'unnamed fact')}</strong>
-            <p>${escapeHtml(truncateText(fact.claim || fact.text || fact.section || fact.source))}</p>
+            <p>${escapeHtml(cleanClaim(fact.claim || fact.text || fact.section || fact.source))}</p>
             <div class="graph-fact-meta">
               <span class="mini-chip">${escapeHtml(fact.source_type || 'source')}</span>
               <span class="mini-chip">${escapeHtml(fact.section || fact.source || 'section')}</span>
